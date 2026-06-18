@@ -48,9 +48,9 @@ export default function AIInsightPanel({ visitId, segmentKey, currentInsight, on
     try {
       const { data } = await api.post(`/visits/${visitId}/analyze/${segmentKey}`);
       onUpdate(data.insight);
-      toast.success("AI insight ready!");
+      toast.success("AI insight ready");
     } catch (e) {
-      toast.error("AI analysis fail ho gaya");
+      toast.error("AI analysis failed");
     } finally {
       setLoading(false);
     }
@@ -76,7 +76,7 @@ export default function AIInsightPanel({ visitId, segmentKey, currentInsight, on
           {renderMd(currentInsight)}
         </div>
       ) : (
-        <div className="text-xs text-muted-foreground">Form bharne ke baad &ldquo;Generate&rdquo; dabayein — AI ke through ready-to-act insights milenge.</div>
+        <div className="text-xs text-muted-foreground">Fill the form, then click &ldquo;Generate&rdquo; to get ready-to-act insights from the AI analyst.</div>
       )}
     </div>
   );

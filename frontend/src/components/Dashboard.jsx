@@ -102,7 +102,7 @@ export default function Dashboard({ visit }) {
       </div>
 
       {/* Charts row 1 */}
-      <Section title="Circulation Trend · सर्कुलेशन रुझान">
+      <Section title="Circulation Trend">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 border-t border-l border-border bg-white">
           <div className="p-6 border-r border-b border-border">
             <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-3">Last Year vs Current Daily Copies</div>
@@ -159,7 +159,7 @@ export default function Dashboard({ visit }) {
                   ))}
                 </tbody>
               </table>
-            ) : <div className="text-xs text-muted-foreground py-6">Koi weak agent record nahi.</div>}
+            ) : <div className="text-xs text-muted-foreground py-6">No weak agent records.</div>}
           </div>
           <div className="p-6 border-r border-b border-border">
             <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-4">Top Lost Clients (Ad Revenue)</div>

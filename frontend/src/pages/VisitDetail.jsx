@@ -22,7 +22,7 @@ export default function VisitDetail() {
   const { isAdmin } = useAuth();
   const [visit, setVisit] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [overrides, setOverrides] = useState({});  // segment_key -> override
+  const [overrides, setOverrides] = useState({});
   const [saving, setSaving] = useState(false);
   const [genExec, setGenExec] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -38,7 +38,7 @@ export default function VisitDetail() {
       setOverrides(s.data || {});
     } catch (err) {
       if (err.response?.status === 403) toast.error("Access denied");
-      else toast.error("Visit nahi mili");
+      else toast.error("Visit not found");
       navigate("/");
     }
   }, [id, navigate]);
@@ -64,10 +64,10 @@ export default function VisitDetail() {
         data: visit.segments[key] || {},
         ...noteForm,
       });
-      toast.success("Save ho gaya");
+      toast.success("Segment saved");
       setSaveDialogOpen(false);
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Save fail");
+      toast.error(e.response?.data?.detail || "Save failed");
     } finally { setSaving(false); }
   };
 
@@ -82,7 +82,7 @@ export default function VisitDetail() {
       setVisit((v) => ({ ...v, executive_summary: data.summary }));
       toast.success("Executive Summary ready");
       setActiveTab("executive");
-    } catch { toast.error("Summary fail"); }
+    } catch { toast.error("Failed to generate summary"); }
     finally { setGenExec(false); }
   };
 
@@ -96,7 +96,6 @@ export default function VisitDetail() {
       <AppHeader />
 
       <main className="max-w-[1400px] mx-auto px-6 py-8">
-        {/* Visit sub-header */}
         <div className="flex items-end justify-between mb-6 no-print">
           <div className="flex items-center gap-4">
             <Link to="/" data-testid="back-to-list-btn" className="text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground flex items-center gap-1.5">
@@ -152,7 +151,7 @@ export default function VisitDetail() {
               ) : (
                 <div className="py-16 text-center">
                   <FileText className="w-10 h-10 mx-auto mb-4 text-muted-foreground" strokeWidth={1.5} />
-                  <p className="text-sm text-muted-foreground mb-4">Executive Summary abhi nahi bani.</p>
+                  <p className="text-sm text-muted-foreground mb-4">Executive Summary not yet generated.</p>
                   <Button data-testid="gen-exec-summary-inline-btn" onClick={generateExec} disabled={genExec} className="rounded-none bg-primary hover:bg-primary/90">
                     {genExec ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />} Generate Executive Summary
                   </Button>
@@ -168,7 +167,7 @@ export default function VisitDetail() {
                 <div className="flex items-end justify-between mb-5 no-print">
                   <div>
                     <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-mono">Segment {SEGMENTS.findIndex(x => x.key === s.key) + 1} of {SEGMENTS.length}</div>
-                    <h2 className="text-3xl font-extrabold tracking-tight">{s.label} <span className="text-muted-foreground font-normal">· {s.hindi}</span></h2>
+                    <h2 className="text-3xl font-extrabold tracking-tight">{s.label}</h2>
                   </div>
                   <div className="flex gap-2">
                     {isAdmin && (
@@ -190,24 +189,22 @@ export default function VisitDetail() {
         </Tabs>
       </main>
 
-      {/* Question editor */}
       <QuestionEditor open={editorOpen} onOpenChange={setEditorOpen} segmentKey={editorSegment} onSaved={onSchemaSaved} />
 
-      {/* Save with note dialog */}
       <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
         <DialogContent className="rounded-none border-foreground">
           <DialogHeader>
             <DialogTitle className="text-2xl font-extrabold">Save Segment</DialogTitle>
-            <p className="text-xs text-muted-foreground">Audit trail ke liye - optional positive / problem note add karein.</p>
+            <p className="text-xs text-muted-foreground">For the audit trail &mdash; optionally capture what was positive and what was a problem.</p>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label className="text-[10px] uppercase tracking-wider text-emerald-700">What was Positive · सकारात्मक</Label>
+              <Label className="text-[10px] uppercase tracking-wider text-emerald-700">What was positive</Label>
               <Textarea data-testid="save-positives-input" value={noteForm.positives} onChange={(e) => setNoteForm({ ...noteForm, positives: e.target.value })} placeholder="e.g. Branch head proactive, recovery improving..." rows={2} className="rounded-none mt-1" />
             </div>
             <div>
-              <Label className="text-[10px] uppercase tracking-wider text-primary">Problems / Issues · समस्या</Label>
-              <Textarea data-testid="save-negatives-input" value={noteForm.negatives} onChange={(e) => setNoteForm({ ...noteForm, negatives: e.target.value })} placeholder="e.g. Outstanding badh raha hai, 2 weak agents..." rows={2} className="rounded-none mt-1" />
+              <Label className="text-[10px] uppercase tracking-wider text-primary">Problems / Issues</Label>
+              <Textarea data-testid="save-negatives-input" value={noteForm.negatives} onChange={(e) => setNoteForm({ ...noteForm, negatives: e.target.value })} placeholder="e.g. Outstanding growing, 2 weak agents..." rows={2} className="rounded-none mt-1" />
             </div>
             <div>
               <Label className="text-[10px] uppercase tracking-wider">Note (optional)</Label>

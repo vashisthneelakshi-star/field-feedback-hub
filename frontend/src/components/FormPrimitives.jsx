@@ -4,12 +4,11 @@ import { Textarea } from "../components/ui/textarea";
 import { Button } from "../components/ui/button";
 import { Trash2, Plus } from "lucide-react";
 
-// ---------- Helper components ----------
 export function Field({ label, hindi, children, span = 1 }) {
   return (
     <div className={`p-4 ${span === 2 ? "md:col-span-2" : ""} ${span === 4 ? "md:col-span-4" : ""}`}>
       <Label className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground block mb-2">
-        {label} {hindi && <span className="text-foreground/60 normal-case tracking-normal font-normal"> · {hindi}</span>}
+        {label}
       </Label>
       {children}
     </div>
@@ -24,12 +23,8 @@ export function TTextarea(props) {
   return <Textarea {...props} className={`rounded-none ${props.className || ""}`} rows={props.rows || 3} />;
 }
 
-// ---------- Editable table for repeating rows ----------
 export function RepeaterTable({ columns, rows = [], onChange, testIdPrefix = "row" }) {
-  const update = (idx, key, value) => {
-    const next = rows.map((r, i) => (i === idx ? { ...r, [key]: value } : r));
-    onChange(next);
-  };
+  const update = (idx, key, value) => onChange(rows.map((r, i) => (i === idx ? { ...r, [key]: value } : r)));
   const add = () => onChange([...rows, columns.reduce((a, c) => ({ ...a, [c.key]: "" }), {})]);
   const remove = (idx) => onChange(rows.filter((_, i) => i !== idx));
 
@@ -48,7 +43,7 @@ export function RepeaterTable({ columns, rows = [], onChange, testIdPrefix = "ro
         </thead>
         <tbody>
           {rows.length === 0 && (
-            <tr><td colSpan={columns.length + 1} className="text-center p-6 text-xs text-muted-foreground">No rows. Add karein neeche se.</td></tr>
+            <tr><td colSpan={columns.length + 1} className="text-center p-6 text-xs text-muted-foreground">No rows. Add one below.</td></tr>
           )}
           {rows.map((row, idx) => (
             <tr key={idx} className="border-b border-border hover:bg-muted/40">
@@ -74,14 +69,53 @@ export function RepeaterTable({ columns, rows = [], onChange, testIdPrefix = "ro
       </table>
       <div className="border-t border-border p-2">
         <Button data-testid={`${testIdPrefix}-add-btn`} variant="outline" size="sm" onClick={add} className="rounded-none h-8 text-xs">
-          <Plus className="w-3 h-3 mr-1" /> Row Add Karein
+          <Plus className="w-3 h-3 mr-1" /> Add Row
         </Button>
       </div>
     </div>
   );
 }
 
-// ---------- Segment Form Builder ----------
+// Dynamic list - allow more than min entries
+export function DynamicList({ items = [], onChange, placeholder = "", min = 0, testIdPrefix = "item" }) {
+  // ensure at least `min` entries are present visually
+  const displayed = items.length >= min ? items : [...items, ...Array(min - items.length).fill("")];
+
+  const update = (idx, val) => {
+    const next = [...displayed];
+    next[idx] = val;
+    onChange(next);
+  };
+  const add = () => onChange([...displayed, ""]);
+  const remove = (idx) => {
+    if (displayed.length <= min) {
+      // just clear the value
+      const next = [...displayed];
+      next[idx] = "";
+      onChange(next);
+      return;
+    }
+    onChange(displayed.filter((_, i) => i !== idx));
+  };
+
+  return (
+    <div className="space-y-2">
+      {displayed.map((val, i) => (
+        <div key={i} className="flex items-center gap-3">
+          <span className="text-xs font-mono text-muted-foreground w-6 flex-shrink-0">{i + 1}.</span>
+          <TInput data-testid={`${testIdPrefix}-${i}`} value={val || ""} onChange={(e) => update(i, e.target.value)} placeholder={placeholder} />
+          <button onClick={() => remove(i)} className="p-2 hover:bg-primary/10 text-muted-foreground hover:text-primary flex-shrink-0" title="Remove">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+      <Button data-testid={`${testIdPrefix}-add-btn`} variant="outline" size="sm" onClick={add} className="rounded-none h-8 text-xs">
+        <Plus className="w-3 h-3 mr-1" /> Add Another
+      </Button>
+    </div>
+  );
+}
+
 export function SegmentForm({ data = {}, onChange, schema }) {
   const set = (key, value) => onChange({ ...data, [key]: value });
 
@@ -97,7 +131,7 @@ export function SegmentForm({ data = {}, onChange, schema }) {
           {sec.type === "grid" && (
             <div className="grid grid-cols-1 md:grid-cols-2 grid-border">
               {sec.fields.map((f) => (
-                <Field key={f.key} label={f.label} hindi={f.hindi} span={f.span}>
+                <Field key={f.key} label={f.label} span={f.span}>
                   {f.kind === "textarea" ? (
                     <TTextarea data-testid={`field-${f.key}`} value={data[f.key] || ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder} />
                   ) : (
@@ -109,40 +143,18 @@ export function SegmentForm({ data = {}, onChange, schema }) {
           )}
           {sec.type === "table" && (
             <div className="p-4">
-              <RepeaterTable
-                columns={sec.columns}
-                rows={data[sec.key] || []}
+              <RepeaterTable columns={sec.columns} rows={data[sec.key] || []} onChange={(v) => set(sec.key, v)} testIdPrefix={sec.key} />
+            </div>
+          )}
+          {sec.type === "list" && (
+            <div className="p-4">
+              <DynamicList
+                items={data[sec.key] || []}
                 onChange={(v) => set(sec.key, v)}
+                placeholder={sec.placeholder}
+                min={sec.min || 0}
                 testIdPrefix={sec.key}
               />
-            </div>
-          )}
-          {sec.type === "list5" && (
-            <div className="p-4 space-y-2">
-              {[0,1,2,3,4].map(i => (
-                <div key={i} className="flex items-center gap-3">
-                  <span className="text-xs font-mono text-muted-foreground w-6">{i+1}.</span>
-                  <TInput data-testid={`${sec.key}-${i}`} value={(data[sec.key] || [])[i] || ""} onChange={(e) => {
-                    const arr = [...(data[sec.key] || ["","","","",""])];
-                    arr[i] = e.target.value;
-                    set(sec.key, arr);
-                  }} placeholder={sec.placeholder} />
-                </div>
-              ))}
-            </div>
-          )}
-          {sec.type === "list3" && (
-            <div className="p-4 space-y-2">
-              {[0,1,2].map(i => (
-                <div key={i} className="flex items-center gap-3">
-                  <span className="text-xs font-mono text-muted-foreground w-6">{i+1}.</span>
-                  <TInput data-testid={`${sec.key}-${i}`} value={(data[sec.key] || [])[i] || ""} onChange={(e) => {
-                    const arr = [...(data[sec.key] || ["","",""])];
-                    arr[i] = e.target.value;
-                    set(sec.key, arr);
-                  }} placeholder={sec.placeholder} />
-                </div>
-              ))}
             </div>
           )}
         </div>

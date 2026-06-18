@@ -278,6 +278,118 @@ def test_ai_executive_summary(admin_headers, admin_visit_id):
     assert "summary" in d and len(d["summary"]) > 50
 
 
+# ---------- Aggregate Dashboard (iteration 2) ----------
+
+def _expected_kpi_keys():
+    return {
+        "total_daily_copies", "total_last_year_copies", "growth_pct",
+        "total_monthly_revenue", "total_outstanding",
+        "total_ad_target", "total_ad_achievement", "ad_achievement_pct",
+        "weak_agents_count", "lost_clients_count", "parties_outstanding",
+    }
+
+
+def test_aggregate_dashboard_admin_all(admin_headers, admin_visit_id):
+    r = requests.get(f"{BASE_URL}/api/dashboard/aggregate",
+                     headers=admin_headers, timeout=20)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["scope"] == "admin_all"
+    assert isinstance(d["visit_count"], int) and d["visit_count"] >= 1
+    assert _expected_kpi_keys().issubset(set(d["kpis"].keys()))
+    assert set(d["ageing_buckets"].keys()) == {"0-30", "31-60", "61-90", "90+"}
+    assert isinstance(d["by_branch"], list)
+    # Our seeded TEST_Jaipur visit has daily_copies=5000 contributed
+    assert d["kpis"]["total_daily_copies"] >= 5000
+    assert d["kpis"]["total_monthly_revenue"] >= 1200000
+
+
+def test_aggregate_dashboard_admin_user_filter(admin_headers, user_credentials,
+                                               admin_visit_id):
+    # Filter to user_credentials user — no visits owned by that user yet
+    r = requests.get(
+        f"{BASE_URL}/api/dashboard/aggregate?user_id={user_credentials['id']}",
+        headers=admin_headers, timeout=20)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["scope"] == "admin_user"
+    assert d["filter_user_id"] == user_credentials["id"]
+    assert d["visit_count"] == 0
+    assert d["kpis"]["total_daily_copies"] == 0
+
+
+def test_aggregate_dashboard_user_self(user_headers, user_credentials):
+    r = requests.get(f"{BASE_URL}/api/dashboard/aggregate",
+                     headers=user_headers, timeout=20)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["scope"] == "self"
+    assert d["filter_user_id"] == user_credentials["id"]
+    assert d["visit_count"] == 0  # user has no visits
+
+
+def test_aggregate_user_id_param_ignored_for_non_admin(user_headers,
+                                                      admin_headers):
+    # Even passing user_id, user scope must remain self
+    r = requests.get(
+        f"{BASE_URL}/api/dashboard/aggregate?user_id=any-other-id",
+        headers=user_headers, timeout=20)
+    assert r.status_code == 200
+    d = r.json()
+    assert d["scope"] == "self"
+
+
+def test_aggregate_recovery_ageing_buckets(admin_headers, admin_visit_id):
+    # Fill recovery segment to verify ageing bucketing
+    payload = {
+        "data": {"parties": [
+            {"party": "TEST_A", "outstanding": 10000, "ageing": 20},
+            {"party": "TEST_B", "outstanding": 5000, "ageing": 45},
+            {"party": "TEST_C", "outstanding": 3000, "ageing": 75},
+            {"party": "TEST_D", "outstanding": 7000, "ageing": 120},
+        ]},
+        "note": "TEST ageing"
+    }
+    r = requests.put(
+        f"{BASE_URL}/api/visits/{admin_visit_id}/segment/recovery",
+        headers=admin_headers, json=payload, timeout=20)
+    assert r.status_code == 200
+    r2 = requests.get(f"{BASE_URL}/api/dashboard/aggregate",
+                      headers=admin_headers, timeout=20)
+    d = r2.json()
+    ab = d["ageing_buckets"]
+    assert ab["0-30"] >= 10000
+    assert ab["31-60"] >= 5000
+    assert ab["61-90"] >= 3000
+    assert ab["90+"] >= 7000
+    assert d["kpis"]["parties_outstanding"] >= 25000
+
+
+# ---------- AI English Output Verification (iteration 2) ----------
+
+def test_ai_segment_output_is_english(admin_headers, admin_visit_id):
+    r = requests.post(
+        f"{BASE_URL}/api/visits/{admin_visit_id}/analyze/branch_head",
+        headers=admin_headers, timeout=120)
+    assert r.status_code == 200
+    text = r.json()["insight"]
+    # Must contain the English structure headers
+    assert "Key Findings" in text
+    assert "Root Causes" in text
+    assert "Suggestions" in text or "Action" in text
+
+
+def test_ai_exec_summary_is_english(admin_headers, admin_visit_id):
+    r = requests.post(
+        f"{BASE_URL}/api/visits/{admin_visit_id}/executive-summary",
+        headers=admin_headers, timeout=180)
+    assert r.status_code == 200
+    text = r.json()["summary"]
+    assert "Executive Snapshot" in text
+    assert "Critical Issues" in text
+    assert "Growth Opportunities" in text
+
+
 # ---------- Cleanup ----------
 
 def test_zz_cleanup_visit(admin_headers, admin_visit_id):

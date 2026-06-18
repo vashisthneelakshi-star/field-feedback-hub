@@ -468,26 +468,26 @@ async def list_audit_logs(visit_id: Optional[str] = None,
 # ---------- AI ----------
 
 SYSTEM_PROMPT_SEGMENT = (
-    "Aap Rajasthan Patrika ke Director Office ke senior business analyst hain. "
-    "Branch visit ke data ko analyse karke crisp, actionable insights dena aapka kaam hai. "
-    "Hamesha Hinglish (Hindi + English mix) me jawab dein - jaisa senior management bolta hai. "
-    "Output STRICTLY is structure me dein:\n\n"
+    "You are a senior business analyst at Rajasthan Patrika's Director Office. "
+    "Your job is to analyse branch visit data and produce crisp, actionable insights. "
+    "Always reply in clear English (the voice senior management uses). "
+    "Output STRICTLY in this structure:\n\n"
     "### Key Findings\n- 3-5 bullet points (data-grounded)\n\n"
     "### Root Causes\n- 2-3 bullet points\n\n"
     "### Suggestions & Ideas\n- 4-6 concrete, actionable suggestions\n\n"
-    "### 30/60/90 Day Action Plan\n- 30 din: ...\n- 60 din: ...\n- 90 din: ...\n\n"
-    "Concise rahein. Generic baat na karein. Sirf jo data diya gaya hai uske basis pe baat karein."
+    "### 30/60/90 Day Action Plan\n- 30 days: ...\n- 60 days: ...\n- 90 days: ...\n\n"
+    "Be concise. Avoid generic statements. Use only the data provided."
 )
 
 SYSTEM_PROMPT_EXEC = (
-    "Aap Rajasthan Patrika ke Director ke liye Executive Summary likh rahe hain. "
-    "Pure visit ka consolidated, board-room-ready summary banana hai. Hinglish me likhein. "
+    "You are writing the Executive Summary for Rajasthan Patrika's Director. "
+    "Produce a consolidated, board-room-ready summary of the entire visit. Reply in clear English. "
     "Structure:\n\n"
-    "### Executive Snapshot\n2-3 lines ka overview.\n\n"
+    "### Executive Snapshot\n2-3 line overview.\n\n"
     "### Top 5 Critical Issues\n1-5 numbered\n\n"
     "### Worst 5 Performers / Weak Areas\n1-5 numbered\n\n"
     "### Top 5 Growth Opportunities\n1-5 numbered\n\n"
-    "### Recommended Director Actions\n3-5 specific decisions/orders Director le sakte hain.\n\n"
+    "### Recommended Director Actions\n3-5 specific decisions/orders the Director can issue.\n\n"
     "### 90-Day Turnaround Plan\nShort paragraph.\n\n"
     "Tone: Authoritative, data-driven, McKinsey-style. No fluff."
 )
@@ -596,6 +596,118 @@ async def executive_summary(visit_id: str, user: dict = Depends(get_current_user
     await add_audit(visit_id, doc.get("branch_name", ""), user, "executive_summary",
                     note="Executive summary generated")
     return {"summary": summary}
+
+
+# ---------- Aggregate Dashboard ----------
+
+@api_router.get("/dashboard/aggregate")
+async def aggregate_dashboard(user_id: Optional[str] = None,
+                              user: dict = Depends(get_current_user)):
+    """Aggregated KPIs across visits. Admin sees all; user sees own.
+    Optional ?user_id filter — admin-only."""
+    query: Dict[str, Any] = {}
+    if user["role"] != "admin":
+        query["created_by"] = user["id"]
+    elif user_id:
+        query["created_by"] = user_id
+
+    visits = await db.visits.find(query, {"_id": 0}).sort("created_at", -1).to_list(2000)
+
+    total_daily = total_last_year = total_revenue = total_outstanding = 0
+    total_ad_target = total_ad_achievement = 0
+    weak_agents_count = lost_clients_count = 0
+    parties_total_outstanding = 0
+    ageing_buckets = {"0-30": 0, "31-60": 0, "61-90": 0, "90+": 0}
+    by_branch: List[Dict[str, Any]] = []
+
+    for v in visits:
+        seg = v.get("segments", {}) or {}
+        bh = seg.get("branch_head", {}) or {}
+        adv = seg.get("advertisement", {}) or {}
+        circ = seg.get("circulation", {}) or {}
+        rec = (seg.get("recovery", {}) or {}).get("parties", []) or []
+
+        def _n(x):
+            try:
+                return float(x or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        daily = _n(bh.get("daily_copies"))
+        last_year = _n(bh.get("last_year_copies"))
+        revenue = _n(bh.get("monthly_revenue"))
+        outstanding = _n(bh.get("outstanding"))
+        target = _n(adv.get("target"))
+        achievement = _n(adv.get("achievement"))
+
+        total_daily += daily
+        total_last_year += last_year
+        total_revenue += revenue
+        total_outstanding += outstanding
+        total_ad_target += target
+        total_ad_achievement += achievement
+
+        weak = [w for w in (circ.get("weak_agents") or []) if (w or {}).get("agent_name")]
+        weak_agents_count += len(weak)
+        lost = [c for c in (adv.get("lost_clients") or []) if (c or {}).get("client")]
+        lost_clients_count += len(lost)
+
+        branch_party_outstanding = 0
+        for r in rec:
+            age = _n((r or {}).get("ageing"))
+            amt = _n((r or {}).get("outstanding"))
+            branch_party_outstanding += amt
+            if age <= 30:
+                ageing_buckets["0-30"] += amt
+            elif age <= 60:
+                ageing_buckets["31-60"] += amt
+            elif age <= 90:
+                ageing_buckets["61-90"] += amt
+            else:
+                ageing_buckets["90+"] += amt
+        parties_total_outstanding += branch_party_outstanding
+
+        by_branch.append({
+            "visit_id": v.get("id"),
+            "branch": v.get("branch_name"),
+            "visit_date": v.get("visit_date"),
+            "owner": v.get("created_by_name"),
+            "daily_copies": daily,
+            "last_year_copies": last_year,
+            "growth_pct": (((daily - last_year) / last_year) * 100) if last_year else None,
+            "monthly_revenue": revenue,
+            "outstanding": outstanding,
+            "ad_target": target,
+            "ad_achievement": achievement,
+            "weak_agents": len(weak),
+            "lost_clients": len(lost),
+            "recovery_outstanding": branch_party_outstanding,
+        })
+
+    growth_pct = ((total_daily - total_last_year) / total_last_year * 100) if total_last_year else None
+    ad_achievement_pct = (total_ad_achievement / total_ad_target * 100) if total_ad_target else None
+
+    return {
+        "scope": "admin_all" if (user["role"] == "admin" and not user_id) else
+                 "admin_user" if user["role"] == "admin" else "self",
+        "visit_count": len(visits),
+        "filter_user_id": user_id if user["role"] == "admin" else user["id"],
+        "kpis": {
+            "total_daily_copies": total_daily,
+            "total_last_year_copies": total_last_year,
+            "growth_pct": growth_pct,
+            "total_monthly_revenue": total_revenue,
+            "total_outstanding": total_outstanding,
+            "total_ad_target": total_ad_target,
+            "total_ad_achievement": total_ad_achievement,
+            "ad_achievement_pct": ad_achievement_pct,
+            "weak_agents_count": weak_agents_count,
+            "lost_clients_count": lost_clients_count,
+            "parties_outstanding": parties_total_outstanding,
+        },
+        "ageing_buckets": ageing_buckets,
+        "by_branch": by_branch,
+    }
 
 
 app.include_router(api_router)

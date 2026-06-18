@@ -57,7 +57,7 @@ export default function QuestionEditor({ open, onOpenChange, segmentKey, onSaved
       onSaved?.();
       onOpenChange(false);
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Save fail");
+      toast.error(e.response?.data?.detail || "Save failed");
     } finally { setSaving(false); }
   };
 
@@ -65,8 +65,8 @@ export default function QuestionEditor({ open, onOpenChange, segmentKey, onSaved
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="rounded-none border-foreground max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-extrabold">Edit Questions · प्रश्न संपादन</DialogTitle>
-          <p className="text-xs text-muted-foreground">Default questions rename ya disable karein. Naye custom questions add karein.</p>
+          <DialogTitle className="text-2xl font-extrabold">Edit Questions</DialogTitle>
+          <p className="text-xs text-muted-foreground">Rename or disable default questions. Add new custom questions.</p>
         </DialogHeader>
 
         {loading ? <div className="p-8 text-sm text-muted-foreground">Loading...</div> : (
@@ -108,7 +108,7 @@ export default function QuestionEditor({ open, onOpenChange, segmentKey, onSaved
                   <div key={q.id || idx} className="border border-border bg-white p-3 grid grid-cols-12 gap-2 items-start">
                     <div className="col-span-5">
                       <Label className="text-[10px] uppercase tracking-wider">Question Label</Label>
-                      <Input value={q.label} onChange={(e) => updateExtra(idx, { label: e.target.value })} className="rounded-none h-9 mt-1" data-testid={`custom-q-label-${idx}`} placeholder="e.g. Distributor ke baare me feedback?" />
+                      <Input value={q.label} onChange={(e) => updateExtra(idx, { label: e.target.value })} className="rounded-none h-9 mt-1" data-testid={`custom-q-label-${idx}`} placeholder="e.g. Feedback about distributor?" />
                     </div>
                     <div className="col-span-3">
                       <Label className="text-[10px] uppercase tracking-wider">Key (unique)</Label>
@@ -134,7 +134,7 @@ export default function QuestionEditor({ open, onOpenChange, segmentKey, onSaved
                 ))}
                 {override.extra_questions.length === 0 && (
                   <div className="border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                    Koi custom question nahi. Upar &ldquo;Add Question&rdquo; dabakar shuru karein.
+                    No custom questions yet. Click &ldquo;Add Question&rdquo; above to start.
                   </div>
                 )}
               </div>

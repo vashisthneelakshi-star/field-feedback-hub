@@ -20,10 +20,8 @@ export default function AdminUsers() {
 
   const load = async () => {
     setLoading(true);
-    try {
-      const { data } = await api.get("/users");
-      setUsers(data);
-    } catch { toast.error("Users load fail"); }
+    try { const { data } = await api.get("/users"); setUsers(data); }
+    catch { toast.error("Failed to load users"); }
     finally { setLoading(false); }
   };
 
@@ -31,7 +29,7 @@ export default function AdminUsers() {
 
   const createUser = async (e) => {
     e.preventDefault();
-    if (form.password.length < 6) return toast.error("Password min 6 chars");
+    if (form.password.length < 6) return toast.error("Password must be at least 6 characters");
     setCreating(true);
     try {
       await api.post("/users", form);
@@ -40,29 +38,29 @@ export default function AdminUsers() {
       setForm({ name: "", email: "", password: "", role: "user" });
       load();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Create fail");
+      toast.error(err.response?.data?.detail || "Failed to create user");
     } finally { setCreating(false); }
   };
 
   const removeUser = async (id) => {
-    if (!window.confirm("Delete this user? Yeh permanent hai.")) return;
+    if (!window.confirm("Delete this user? This cannot be undone.")) return;
     try {
       await api.delete(`/users/${id}`);
-      toast.success("Deleted");
+      toast.success("User deleted");
       load();
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Delete fail");
+      toast.error(err.response?.data?.detail || "Delete failed");
     }
   };
 
   const toggleRole = async (u) => {
     const newRole = u.role === "admin" ? "user" : "admin";
-    if (!window.confirm(`Role ko ${newRole} me change karein?`)) return;
+    if (!window.confirm(`Change role to ${newRole}?`)) return;
     try {
       await api.patch(`/users/${u.id}`, { role: newRole });
       toast.success("Role updated");
       load();
-    } catch (err) { toast.error(err.response?.data?.detail || "Update fail"); }
+    } catch (err) { toast.error(err.response?.data?.detail || "Update failed"); }
   };
 
   const toggleActive = async (u) => {
@@ -70,7 +68,7 @@ export default function AdminUsers() {
       await api.patch(`/users/${u.id}`, { is_active: !u.is_active });
       toast.success(u.is_active ? "Deactivated" : "Activated");
       load();
-    } catch { toast.error("Update fail"); }
+    } catch { toast.error("Update failed"); }
   };
 
   return (
@@ -80,13 +78,13 @@ export default function AdminUsers() {
         <div className="flex items-end justify-between mb-6">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-2">Administration</div>
-            <h2 className="text-4xl font-extrabold tracking-tight">User Management · उपयोगकर्ता प्रबंधन</h2>
-            <p className="text-sm text-muted-foreground mt-2">Visiting team members ko add karein, roles assign karein.</p>
+            <h2 className="text-4xl font-extrabold tracking-tight">User Management</h2>
+            <p className="text-sm text-muted-foreground mt-2">Add visiting team members and assign roles.</p>
           </div>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button data-testid="add-user-btn" className="rounded-none bg-primary hover:bg-primary/90 h-10">
-                <UserPlus className="w-4 h-4 mr-2" /> Naya User Banayein
+                <UserPlus className="w-4 h-4 mr-2" /> Add User
               </Button>
             </DialogTrigger>
             <DialogContent className="rounded-none border-foreground">

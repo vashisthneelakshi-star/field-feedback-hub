@@ -56,8 +56,8 @@ export default function HistoryPage() {
         <div className="flex items-end justify-between mb-6">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-2">Audit Trail</div>
-            <h2 className="text-4xl font-extrabold tracking-tight">History · इतिहास</h2>
-            <p className="text-sm text-muted-foreground mt-2">{isAdmin ? "Sabhi visits ki" : "Aapki visits ki"} timeline — kab, kisne, kya kiya — saath me positive/negative notes.</p>
+            <h2 className="text-4xl font-extrabold tracking-tight">History</h2>
+            <p className="text-sm text-muted-foreground mt-2">{isAdmin ? "Timeline of every visit" : "Timeline of your visits"} &mdash; who, when, what action &mdash; with positive and problem notes.</p>
           </div>
           <Input data-testid="history-search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search branch / user / note..." className="rounded-none h-10 w-80" />
         </div>

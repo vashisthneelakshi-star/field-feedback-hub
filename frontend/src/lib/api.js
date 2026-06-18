@@ -28,13 +28,13 @@ api.interceptors.response.use(
 );
 
 export const SEGMENTS = [
-  { key: "branch_head", label: "Branch Head", hindi: "ब्रांच हेड" },
-  { key: "circulation", label: "Circulation", hindi: "सर्कुलेशन" },
-  { key: "agent", label: "Agent", hindi: "एजेंट" },
-  { key: "hawker", label: "Hawker", hindi: "हॉकर" },
-  { key: "correspondent", label: "Correspondent", hindi: "संवाददाता" },
-  { key: "advertisement", label: "Advt. Team", hindi: "विज्ञापन" },
-  { key: "ad_agency", label: "Ad Agency", hindi: "एड एजेंसी" },
-  { key: "recovery", label: "Recovery", hindi: "रिकवरी" },
-  { key: "summary", label: "Daily Summary", hindi: "डेली समरी" },
+  { key: "branch_head", label: "Branch Head" },
+  { key: "circulation", label: "Circulation" },
+  { key: "agent", label: "Agent" },
+  { key: "hawker", label: "Hawker" },
+  { key: "correspondent", label: "Correspondent" },
+  { key: "advertisement", label: "Advt. Team" },
+  { key: "ad_agency", label: "Ad Agency" },
+  { key: "recovery", label: "Recovery" },
+  { key: "summary", label: "Daily Summary" },
 ];
