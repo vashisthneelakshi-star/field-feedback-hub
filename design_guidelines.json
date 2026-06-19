@@ -1,0 +1,96 @@
+{
+  "theme": "light",
+  "archetype": "Archetype 4 (Swiss & High-Contrast)",
+  "emotional_tone": "Authoritative, Objective, Curated, High-Trust, Editorial",
+  "global_rules": {
+    "language": "Hinglish (mix of Hindi and English) for UI labels and headings to ensure cultural alignment and user comfort.",
+    "density": "High density for data, but grouped logically with borders. Executive/BCG report feel.",
+    "alignment": "Left-aligned for paragraphs, tables, and form inputs. Numbers right-aligned in tables."
+  },
+  "colors": {
+    "background": "#FAFAFA",
+    "surface": "#FFFFFF",
+    "primary": "#B91C1C",
+    "primary_foreground": "#FFFFFF",
+    "secondary": "#171717",
+    "secondary_foreground": "#FFFFFF",
+    "muted": "#F5F5F5",
+    "muted_foreground": "#737373",
+    "border": "#E5E5E5",
+    "status": {
+      "success": "#166534",
+      "warning": "#CA8A04",
+      "danger": "#DC2626",
+      "info": "#1D4ED8"
+    }
+  },
+  "typography": {
+    "font_families": {
+      "headings": "Cabinet Grotesk, sans-serif",
+      "body": "IBM Plex Sans, sans-serif",
+      "mono": "IBM Plex Mono, monospace"
+    },
+    "hierarchy": {
+      "h1": "text-4xl font-black tracking-tight text-secondary",
+      "h2": "text-2xl font-bold tracking-tight text-secondary",
+      "h3": "text-xl font-semibold tracking-tight text-secondary",
+      "body": "text-sm text-secondary leading-relaxed",
+      "labels": "text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground",
+      "data_numbers": "text-3xl font-medium tracking-tighter text-secondary font-mono"
+    }
+  },
+  "spacing_and_layout": {
+    "container": "max-w-[1400px] mx-auto px-6 py-8",
+    "grid_system": "Grid cols-1 md:grid-cols-4 gap-6. Grid items must be direct children.",
+    "surface_treatment": "Grid Borders strategy. Use border-collapse styles or items with subtle border-r border-b. Flat solid surfaces, NO glassmorphism.",
+    "padding_scale": "Use generous internal padding in major sections (p-8), tight in data widgets (p-4)."
+  },
+  "components": {
+    "navigation": "Top summary band with primary navigation or Left-side detail rail. Must include Logo area, Visit Selector, and PDF Export CTA.",
+    "tabs": "Shadcn Tabs. Must override default height to h-auto. Use for switching between the 8 segments.",
+    "cards": "Flat background, 1px solid border (border-border), rounded-none or rounded-sm max. No shadows. Use for per-segment KPIs.",
+    "tables": "Shadcn Table. Dense styling. 1px border. Zebra striping or subtle hover row (hover:bg-muted).",
+    "forms": "Shadcn Form primitives. Inputs must have clear 1px borders, square or 4px radius. Left-aligned labels.",
+    "charts": "Recharts wrapped in Shadcn Chart. Use monochrome and primary accent (Red/Black/Grey) for bars and lines.",
+    "ai_insight_panel": "Narrative insight panel. Background: #FEF2F2 (Very light red) to distinguish AI content. Include an AI icon.",
+    "buttons": "Square or rounded-sm. Primary CTA in B91C1C (Crimson), secondary in Outline."
+  },
+  "motion": {
+    "hover_states": "Crisp, fast transitions. duration-150 ease-in-out.",
+    "interactions": "Subtle -translate-y-[1px] on actionable cards.",
+    "page_transitions": "Fade in. No complex staggering for enterprise data to ensure perceived performance."
+  },
+  "icons_and_assets": {
+    "icon_library": "lucide-react",
+    "icon_style": "Stroke width 1.5, sharp, professional."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1498644035638-2c3357894b10?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwyfHxwcmludGluZyUyMHByZXNzJTIwbmV3c3BhcGVyJTIwcHJvZHVjdGlvbnxlbnwwfHx8fDE3ODE3MDE4NzR8MA&ixlib=rb-4.1.0&q=85",
+        "category": "hero_background",
+        "description": "Piles of newspapers. Use as a subtle, low-opacity background for the visit selector page or login."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1758518730037-a16581a040e8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwxfHxtaW5pbWFsaXN0JTIwY29ycG9yYXRlJTIwYm9hcmRyb29tJTIwbWVldGluZ3xlbnwwfHx8fDE3ODE3MDE4NzR8MA&ixlib=rb-4.1.0&q=85",
+        "category": "executive_summary_header",
+        "description": "Corporate meeting. Use as an accent image in the Executive Summary PDF header or dashboard header."
+      }
+    ]
+  },
+  "testing_requirements": {
+    "data_testid_rules": "All interactive and key informational elements MUST include a data-testid attribute in kebab-case, role-based format (e.g., 'submit-visit-btn', 'segment-tab-circulation', 'ai-insight-text')."
+  },
+  "specific_segment_instructions": {
+    "segment_1": "Branch Head: Focus on revenue vs target comparison.",
+    "segment_2": "Circulation: Highlight top 5 weak agents in a high-contrast table.",
+    "segment_3": "Agent Feedback: Dynamic entry forms for commitments.",
+    "segment_4": "Hawker Feedback: Form fields with Hinglish labels.",
+    "segment_5": "Correspondent: Text-heavy narrative areas.",
+    "segment_6": "Ad Team: Revenue charts and lost client table.",
+    "segment_7": "Ad Agency: Sentiment analysis inputs.",
+    "segment_8": "Recovery: Ageing table (30/60/90 days) with red highlighting for >90 days.",
+    "dashboard_summary": "Top 5 issues/opportunities side-by-side. Executive summary narrative spanning full width."
+  },
+  "instructions_to_main_agent": "Use Lucide-React for all icons. Follow the strict Swiss & High-Contrast archetype. Do NOT use gradients or soft shadows. Stick to sharp, 1px borders and flat colors. The app is hybrid data-entry + dashboard. Ensure all 8 segments have tabs in the UI. Use Hinglish strictly for labels. Make sure the data input forms and dashboard views can toggle or are laid out clearly. IMPORTANT: Write guidelines for .js files, NOT .tsx files. Use standard React with JS and prop-types or purely JS."
+}
