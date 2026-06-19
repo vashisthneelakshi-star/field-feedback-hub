@@ -38,6 +38,13 @@ let webpackConfig = {
     },
     configure: (webpackConfig) => {
 
+      // Remove ForkTsCheckerWebpackPlugin — this project has no TypeScript,
+      // and the plugin's bundled ajv-keywords version crashes with ajv@8
+      // (TypeError: Cannot read properties of undefined (reading 'date'))
+      webpackConfig.plugins = webpackConfig.plugins.filter(
+        (plugin) => plugin.constructor.name !== "ForkTsCheckerWebpackPlugin"
+      );
+
       // Add ignored patterns to reduce watched directories
         webpackConfig.watchOptions = {
           ...webpackConfig.watchOptions,
