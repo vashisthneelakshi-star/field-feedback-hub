@@ -13,9 +13,114 @@ import { SegmentForm } from "../components/FormPrimitives";
 import AIInsightPanel, { renderMd } from "../components/AIInsightPanel";
 import Dashboard from "../components/Dashboard";
 import QuestionEditor from "../components/QuestionEditor";
-import { ArrowLeft, Save, Loader2, FileText, Sparkles, Printer, BarChart3, ScrollText, Settings2 } from "lucide-react";
+import { ArrowLeft, Save, Loader2, FileText, Sparkles, Printer, BarChart3, ScrollText, Settings2, Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
+// ── Multi-entry card component ─────────────────────────────────────────────
+function MultiEntrySegment({ segKey, schema, data, onChange }) {
+  const entries = Array.isArray(data) ? data : [];
+  const [collapsed, setCollapsed] = useState({});
+
+  const entryLabel = schema.entryLabel || "Entry";
+
+  // Get a display name for each entry from first text field
+  const getEntryName = (entry) => {
+    const firstTextField = schema.sections
+      .flatMap(s => s.fields || [])
+      .find(f => f.kind !== "number" && f.kind !== "textarea");
+    if (firstTextField && entry[firstTextField.key]) return entry[firstTextField.key];
+    return `${entryLabel} ${entries.indexOf(entry) + 1}`;
+  };
+
+  const addEntry = () => {
+    onChange([...entries, {}]);
+    // auto-expand the new entry
+    setCollapsed(c => ({ ...c, [entries.length]: false }));
+  };
+
+  const removeEntry = (idx) => {
+    onChange(entries.filter((_, i) => i !== idx));
+  };
+
+  const updateEntry = (idx, entryData) => {
+    onChange(entries.map((e, i) => (i === idx ? entryData : e)));
+  };
+
+  const toggleCollapse = (idx) => {
+    setCollapsed(c => ({ ...c, [idx]: !c[idx] }));
+  };
+
+  return (
+    <div>
+      {/* Header bar with count + Add button */}
+      <div className="flex items-center justify-between mb-5">
+        <span className="text-xs text-muted-foreground">
+          {entries.length} {entryLabel.toLowerCase()}{entries.length !== 1 ? "s" : ""} captured
+        </span>
+        <Button
+          onClick={addEntry}
+          className="rounded-none bg-primary hover:bg-primary/90 h-10"
+        >
+          <Plus className="w-4 h-4 mr-2" /> Add {entryLabel}
+        </Button>
+      </div>
+
+      {entries.length === 0 && (
+        <div className="border border-dashed border-border p-12 text-center bg-white">
+          <p className="text-sm text-muted-foreground">
+            No {entryLabel.toLowerCase()}s yet. Click "Add {entryLabel}" to begin.
+          </p>
+        </div>
+      )}
+
+      {/* Entry cards */}
+      <div className="space-y-4">
+        {entries.map((entry, idx) => (
+          <div key={idx} className="border border-border bg-white">
+            {/* Card header */}
+            <div className="bg-secondary text-secondary-foreground flex items-center justify-between px-5 py-3">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-mono opacity-60">{String(idx + 1).padStart(2, "0")}</span>
+                <span className="font-bold text-base">
+                  {getEntryName(entry) || `${entryLabel} ${idx + 1}`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => toggleCollapse(idx)}
+                  className="p-1.5 hover:bg-white/10 rounded"
+                  title={collapsed[idx] ? "Expand" : "Collapse"}
+                >
+                  {collapsed[idx]
+                    ? <ChevronDown className="w-4 h-4" />
+                    : <ChevronUp className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={() => removeEntry(idx)}
+                  className="p-1.5 hover:bg-primary/20 rounded text-primary-foreground hover:text-primary"
+                  title="Delete"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Card body */}
+            {!collapsed[idx] && (
+              <SegmentForm
+                data={entry}
+                onChange={(d) => updateEntry(idx, d)}
+                schema={schema}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Main VisitDetail ───────────────────────────────────────────────────────
 export default function VisitDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -45,6 +150,10 @@ export default function VisitDetail() {
 
   useEffect(() => { load(); }, [load]);
 
+  // For multi-entry segments, data is stored as an array under segments[key]
+  // For summary (single), data is stored as object
+  const isMultiEntry = (key) => key !== "summary";
+
   const updateSegmentLocal = (key, data) => {
     setVisit((v) => ({ ...v, segments: { ...v.segments, [key]: data } }));
   };
@@ -61,7 +170,7 @@ export default function VisitDetail() {
     setSaving(true);
     try {
       await api.put(`/visits/${id}/segment/${key}`, {
-        data: visit.segments[key] || {},
+        data: visit.segments[key] || (isMultiEntry(key) ? [] : {}),
         ...noteForm,
       });
       toast.success("Segment saved");
@@ -89,7 +198,12 @@ export default function VisitDetail() {
   const openEditor = (segKey) => { setEditorSegment(segKey); setEditorOpen(true); };
   const onSchemaSaved = () => { api.get("/schemas").then(({ data }) => setOverrides(data || {})); };
 
-  if (!visit) return <div className="min-h-screen bg-background"><AppHeader /><div className="p-12 text-sm text-muted-foreground">Loading...</div></div>;
+  if (!visit) return (
+    <div className="min-h-screen bg-background">
+      <AppHeader />
+      <div className="p-12 text-sm text-muted-foreground">Loading...</div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -104,8 +218,12 @@ export default function VisitDetail() {
             <div className="h-6 w-px bg-border" />
             <div>
               <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-mono">Branch Visit</div>
-              <h1 className="text-3xl font-extrabold tracking-tight">{visit.branch_name} <span className="text-muted-foreground font-normal">· {visit.visit_date}</span></h1>
-              <div className="text-xs text-muted-foreground mt-1">By {visit.created_by_name} · Last edited: {visit.last_edited_by_name || "—"}</div>
+              <h1 className="text-3xl font-extrabold tracking-tight">
+                {visit.branch_name} <span className="text-muted-foreground font-normal">· {visit.visit_date}</span>
+              </h1>
+              <div className="text-xs text-muted-foreground mt-1">
+                By {visit.created_by_name} · Last edited: {visit.last_edited_by_name || "—"}
+              </div>
             </div>
           </div>
           <div className="flex gap-2">
@@ -134,7 +252,9 @@ export default function VisitDetail() {
             ))}
           </TabsList>
 
-          <TabsContent value="dashboard" className="mt-8"><Dashboard visit={visit} /></TabsContent>
+          <TabsContent value="dashboard" className="mt-8">
+            <Dashboard visit={visit} />
+          </TabsContent>
 
           <TabsContent value="executive" className="mt-8">
             <div className="border border-border bg-white p-8 max-w-4xl">
@@ -142,18 +262,25 @@ export default function VisitDetail() {
                 <div>
                   <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-mono">Director&apos;s Brief</div>
                   <h2 className="text-3xl font-extrabold tracking-tight mt-1">Executive Summary</h2>
-                  <p className="text-xs text-muted-foreground mt-2">{visit.branch_name} · {visit.visit_date} · {visit.visiting_team || "Visiting Team"}</p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {visit.branch_name} · {visit.visit_date} · {visit.visiting_team || "Visiting Team"}
+                  </p>
                 </div>
-                <div className="text-right text-[10px] uppercase tracking-widest text-muted-foreground font-mono">Patrika<br />Director Office</div>
+                <div className="text-right text-[10px] uppercase tracking-widest text-muted-foreground font-mono">
+                  Patrika<br />Director Office
+                </div>
               </div>
               {visit.executive_summary ? (
-                <div data-testid="executive-summary-text" className="ai-md">{renderMd(visit.executive_summary)}</div>
+                <div data-testid="executive-summary-text" className="ai-md">
+                  {renderMd(visit.executive_summary)}
+                </div>
               ) : (
                 <div className="py-16 text-center">
                   <FileText className="w-10 h-10 mx-auto mb-4 text-muted-foreground" strokeWidth={1.5} />
                   <p className="text-sm text-muted-foreground mb-4">Executive Summary not yet generated.</p>
                   <Button data-testid="gen-exec-summary-inline-btn" onClick={generateExec} disabled={genExec} className="rounded-none bg-primary hover:bg-primary/90">
-                    {genExec ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />} Generate Executive Summary
+                    {genExec ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                    Generate Executive Summary
                   </Button>
                 </div>
               )}
@@ -162,11 +289,17 @@ export default function VisitDetail() {
 
           {SEGMENTS.map((s) => {
             const merged = mergeSchema(SCHEMAS[s.key], overrides[s.key]);
+            const segData = visit.segments[s.key];
+            const multi = isMultiEntry(s.key);
+
             return (
               <TabsContent key={s.key} value={s.key} className="mt-8">
+                {/* Segment header */}
                 <div className="flex items-end justify-between mb-5 no-print">
                   <div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-mono">Segment {SEGMENTS.findIndex(x => x.key === s.key) + 1} of {SEGMENTS.length}</div>
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-mono">
+                      Segment {SEGMENTS.findIndex(x => x.key === s.key) + 1} of {SEGMENTS.length}
+                    </div>
                     <h2 className="text-3xl font-extrabold tracking-tight">{s.label}</h2>
                   </div>
                   <div className="flex gap-2">
@@ -181,8 +314,30 @@ export default function VisitDetail() {
                   </div>
                 </div>
                 <div className="editorial-rule mb-6" />
-                <SegmentForm data={visit.segments[s.key] || {}} onChange={(d) => updateSegmentLocal(s.key, d)} schema={merged} />
-                <AIInsightPanel visitId={visit.id} segmentKey={s.key} currentInsight={(visit.ai_insights || {})[s.key]} onUpdate={(t) => setAiInsight(s.key, t)} />
+
+                {/* Multi-entry (all segments except summary) */}
+                {multi ? (
+                  <MultiEntrySegment
+                    segKey={s.key}
+                    schema={merged}
+                    data={Array.isArray(segData) ? segData : []}
+                    onChange={(d) => updateSegmentLocal(s.key, d)}
+                  />
+                ) : (
+                  /* Summary — single form */
+                  <SegmentForm
+                    data={segData || {}}
+                    onChange={(d) => updateSegmentLocal(s.key, d)}
+                    schema={merged}
+                  />
+                )}
+
+                <AIInsightPanel
+                  visitId={visit.id}
+                  segmentKey={s.key}
+                  currentInsight={(visit.ai_insights || {})[s.key]}
+                  onUpdate={(t) => setAiInsight(s.key, t)}
+                />
               </TabsContent>
             );
           })}
@@ -195,7 +350,9 @@ export default function VisitDetail() {
         <DialogContent className="rounded-none border-foreground">
           <DialogHeader>
             <DialogTitle className="text-2xl font-extrabold">Save Segment</DialogTitle>
-            <p className="text-xs text-muted-foreground">For the audit trail &mdash; optionally capture what was positive and what was a problem.</p>
+            <p className="text-xs text-muted-foreground">
+              For the audit trail — optionally capture what was positive and what was a problem.
+            </p>
           </DialogHeader>
           <div className="space-y-3">
             <div>
