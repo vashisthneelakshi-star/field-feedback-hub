@@ -8,6 +8,7 @@ import VisitDetail from "./pages/VisitDetail";
 import AdminUsers from "./pages/AdminUsers";
 import HistoryPage from "./pages/History";
 import GlobalDashboard from "./pages/GlobalDashboard";
+import VisitMatrix from "./pages/VisitMatrix";
 import { Toaster } from "./components/ui/sonner";
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<ProtectedRoute><VisitsList /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><GlobalDashboard /></ProtectedRoute>} />
+            <Route path="/matrix" element={<ProtectedRoute><VisitMatrix /></ProtectedRoute>} />
             <Route path="/visits/:id" element={<ProtectedRoute><VisitDetail /></ProtectedRoute>} />
             <Route path="/history" element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
             <Route path="/admin/users" element={<ProtectedRoute adminOnly><AdminUsers /></ProtectedRoute>} />
