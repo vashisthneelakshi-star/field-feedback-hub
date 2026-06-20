@@ -71,13 +71,13 @@ export default function HistoryPage() {
               <div key={vid} className="border border-border bg-white">
                 <div className="border-b border-foreground px-5 py-3 flex items-center justify-between bg-secondary text-secondary-foreground">
                   <div>
+                    <Link to={`/visits/${vid}`} className="hover:opacity-70">
                     <div className="text-[10px] uppercase tracking-[0.2em] opacity-70">Branch Visit</div>
                     <h3 className="text-xl font-bold">{group.branch_name}</h3>
-                  </div>
-                  <Link to={`/visits/${vid}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70">
+                    </Link>
+                    <Link to={`/visits/${vid}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70">
                     Open <ExternalLink className="w-3.5 h-3.5" />
                   </Link>
-                </div>
                 <div className="divide-y divide-border">
                   {group.items.map(l => {
                     const meta = ACTION_META[l.action] || { label: l.action, icon: BarChart3, color: "text-muted-foreground" };
