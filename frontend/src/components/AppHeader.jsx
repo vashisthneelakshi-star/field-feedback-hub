@@ -1,11 +1,12 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { Button } from "./ui/button";
-import { LogOut, Users, History, Home, Shield, LayoutDashboard } from "lucide-react";
+import { LogOut, Users, History, Home, Shield, LayoutDashboard, Table2 } from "lucide-react";
 
 export default function AppHeader() {
   const { user, logout, isAdmin } = useAuth();
   const loc = useLocation();
+
   const navItem = (to, icon, label, testid) => {
     const Icon = icon;
     const active = loc.pathname === to || (to !== "/" && loc.pathname.startsWith(to));
@@ -31,6 +32,7 @@ export default function AppHeader() {
           <nav className="flex items-center gap-1 ml-4">
             {navItem("/", Home, "Visits", "nav-visits")}
             {navItem("/dashboard", LayoutDashboard, "Dashboard", "nav-dashboard")}
+            {navItem("/matrix", Table2, "Matrix", "nav-matrix")}
             {navItem("/history", History, "History", "nav-history")}
             {isAdmin && navItem("/admin/users", Users, "Users", "nav-users")}
           </nav>
