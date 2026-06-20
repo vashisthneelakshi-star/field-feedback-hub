@@ -39,7 +39,6 @@ export default function HistoryPage() {
     );
   }, [logs, q]);
 
-  // group by visit_id
   const byVisit = useMemo(() => {
     const map = {};
     filtered.forEach(l => {
@@ -57,27 +56,40 @@ export default function HistoryPage() {
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-2">Audit Trail</div>
             <h2 className="text-4xl font-extrabold tracking-tight">History</h2>
-            <p className="text-sm text-muted-foreground mt-2">{isAdmin ? "Timeline of every visit" : "Timeline of your visits"} &mdash; who, when, what action &mdash; with positive and problem notes.</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              {isAdmin ? "Timeline of every visit" : "Timeline of your visits"} &mdash; who, when, what action &mdash; with positive and problem notes.
+            </p>
           </div>
-          <Input data-testid="history-search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search branch / user / note..." className="rounded-none h-10 w-80" />
+          <Input
+            data-testid="history-search-input"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search branch / user / note..."
+            className="rounded-none h-10 w-80"
+          />
         </div>
         <div className="editorial-rule mb-6" />
 
-        {loading ? <div className="text-sm text-muted-foreground">Loading...</div> :
-         byVisit.length === 0 ? <div className="border border-border p-12 text-center bg-white text-sm text-muted-foreground">No history yet.</div> :
-         (
+        {loading ? (
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        ) : byVisit.length === 0 ? (
+          <div className="border border-border p-12 text-center bg-white text-sm text-muted-foreground">No history yet.</div>
+        ) : (
           <div className="space-y-8">
             {byVisit.map(([vid, group]) => (
               <div key={vid} className="border border-border bg-white">
+                {/* Visit header — full name clickable */}
                 <div className="border-b border-foreground px-5 py-3 flex items-center justify-between bg-secondary text-secondary-foreground">
-                  <div>
-                    <Link to={`/visits/${vid}`} className="hover:opacity-70">
+                  <Link to={`/visits/${vid}`} className="hover:opacity-70">
                     <div className="text-[10px] uppercase tracking-[0.2em] opacity-70">Branch Visit</div>
                     <h3 className="text-xl font-bold">{group.branch_name}</h3>
-                    </Link>
-                    <Link to={`/visits/${vid}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70">
+                  </Link>
+                  <Link to={`/visits/${vid}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70">
                     Open <ExternalLink className="w-3.5 h-3.5" />
                   </Link>
+                </div>
+
+                {/* Audit log items */}
                 <div className="divide-y divide-border">
                   {group.items.map(l => {
                     const meta = ACTION_META[l.action] || { label: l.action, icon: BarChart3, color: "text-muted-foreground" };
@@ -85,17 +97,26 @@ export default function HistoryPage() {
                     return (
                       <div key={l.id} className="p-5 flex gap-5" data-testid={`audit-log-${l.id}`}>
                         <div className="w-32 flex-shrink-0">
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">{new Date(l.timestamp).toLocaleDateString("en-IN")}</div>
-                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">{new Date(l.timestamp).toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit' })}</div>
+                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
+                            {new Date(l.timestamp).toLocaleDateString("en-IN")}
+                          </div>
+                          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">
+                            {new Date(l.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                          </div>
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <Icon className={`w-4 h-4 ${meta.color}`} strokeWidth={1.5} />
                             <span className={`text-xs uppercase tracking-wider font-semibold ${meta.color}`}>{meta.label}</span>
-                            {l.segment_key && <span className="text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1.5 py-0.5">{l.segment_key.replace("_", " ")}</span>}
+                            {l.segment_key && (
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground border border-border px-1.5 py-0.5">
+                                {l.segment_key.replace("_", " ")}
+                              </span>
+                            )}
                           </div>
                           <div className="text-sm">
-                            <span className="font-semibold">{l.user_name}</span> <span className="text-muted-foreground">· {l.user_email}</span>
+                            <span className="font-semibold">{l.user_name}</span>{" "}
+                            <span className="text-muted-foreground">· {l.user_email}</span>
                           </div>
                           {l.note && <div className="text-sm text-muted-foreground mt-1.5">{l.note}</div>}
                           {(l.positives || l.negatives) && (
