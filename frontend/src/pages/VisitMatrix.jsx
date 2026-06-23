@@ -118,6 +118,7 @@ async function downloadExcel(rows) {
   // Each segment gets its own sheet, rows = one data row per entry per visit
 
   // 1. BRANCH HEAD
+  const wsSummary = wb.addWorksheet("Summary", { views: [{ showGridLines: false }] });
   const wsBH = wb.addWorksheet("Branch Head", { views: [{ showGridLines: false, state: "frozen", ySplit: 1 }] });
   const bhCols = [
     { header: "Branch Name", key: "branch", width: 18 },
@@ -328,7 +329,6 @@ async function downloadExcel(rows) {
   });
 
   // ─── SUMMARY SHEET ────────────────────────────────────────────────────────
-  const wsSummary = wb.addWorksheet("Summary", { views: [{ showGridLines: false }] });
   wsSummary.columns = [{ width: 36 }, { width: 22 }];
 
   const addSum = (label, value, isBold = false, bgArgb = null) => {
@@ -372,7 +372,6 @@ async function downloadExcel(rows) {
   addSum("Total Lost Clients", rows.reduce((s, r) => s + (r.lostClientsCount || 0), 0));
 
   // Move Summary to first position
-  wb.moveSheet("Summary", 0);
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
