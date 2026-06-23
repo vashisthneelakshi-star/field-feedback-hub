@@ -29,7 +29,6 @@ function buildRow(v) {
   const advArr = arrOf(seg.advertisement);
   const agencyArr = arrOf(seg.ad_agency);
   const recoveryArr = arrOf(seg.recovery);
-
   const totalDaily = bhArr.reduce((s, e) => s + (Number(e.daily_copies) || 0), 0);
   const totalLY = bhArr.reduce((s, e) => s + (Number(e.last_year_copies) || 0), 0);
   const totalRev = bhArr.reduce((s, e) => s + (Number(e.monthly_revenue) || 0), 0);
@@ -43,7 +42,6 @@ function buildRow(v) {
   const lostClients = advArr.flatMap(e => (e.lost_clients || []).filter(r => r.client));
   const allParties = recoveryArr.flatMap(e => (e.parties || []));
   const totalRecovery = allParties.reduce((s, p) => s + (Number(p.outstanding) || 0), 0);
-
   return {
     id: v.id, branch: v.branch_name, date: v.visit_date, visitedBy: v.created_by_name || "—",
     bhNames: names(seg.branch_head, "name"),
@@ -66,299 +64,316 @@ function buildRow(v) {
     lostClientsList: lostClients.map(c => c.client).join(", ") || "—",
     agencyNames: names(seg.ad_agency, "agency_name"), agencyCount: agencyArr.length || null,
     recoveryParties: allParties.length || null, totalRecovery: totalRecovery || null,
-    // raw arrays for Excel detail
     _bhArr: bhArr, _circArr: circArr, _agentArr: agentArr, _hawkerArr: hawkerArr,
     _corrArr: corrArr, _advArr: advArr, _agencyArr: agencyArr, _recoveryArr: recoveryArr,
     _weakAgents: weakAgents, _lostClients: lostClients, _allParties: allParties,
   };
 }
 
-// ── Excel helpers ────────────────────────────────────────────────────────────
-const THIN = { style: "thin", color: { argb: "FFD1D5DB" } };
-const border = { top: THIN, left: THIN, bottom: THIN, right: THIN };
-const thickBorder = {
-  top: { style: "medium", color: { argb: "FF1F3864" } },
-  left: { style: "medium", color: { argb: "FF1F3864" } },
-  bottom: { style: "medium", color: { argb: "FF1F3864" } },
-  right: { style: "medium", color: { argb: "FF1F3864" } },
+// ── Excel Download ────────────────────────────────────────────────────────────
+const THIN = { style: "thin", color: { argb: "FFBDBDBD" } };
+const bdr = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+
+const SEG_COLORS = {
+  BH:       { bg: "FFB91C1C", fg: "FFFFFFFF" },
+  CIRC:     { bg: "FF166534", fg: "FFFFFFFF" },
+  AGENT:    { bg: "FF92400E", fg: "FFFFFFFF" },
+  HAWKER:   { bg: "FF1E3A5F", fg: "FFFFFFFF" },
+  CORR:     { bg: "FF4A1D96", fg: "FFFFFFFF" },
+  ADV:      { bg: "FF7C2D12", fg: "FFFFFFFF" },
+  AGENCY:   { bg: "FF134E4A", fg: "FFFFFFFF" },
+  RECOVERY: { bg: "FF312E81", fg: "FFFFFFFF" },
 };
 
-const SECTION_COLORS = {
-  META: "FF1F3864",        // dark blue
-  BH: "FFB91C1C",          // red
-  CIRC: "FF166534",        // green
-  AGENT: "FF854D0E",       // amber
-  HAWKER: "FF1E3A5F",      // navy
-  CORR: "FF4A1D96",        // purple
-  ADV: "FF7C2D12",         // orange-red
-  AGENCY: "FF134E4A",      // teal
-  RECOVERY: "FF312E81",    // indigo
-};
-
-function styleHeader(cell, bgArgb) {
-  cell.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 10 };
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bgArgb } };
-  cell.alignment = { horizontal: "center", vertical: "middle", wrapText: false };
-  cell.border = border;
+function applyHeader(row, cols, color) {
+  row.height = 28;
+  cols.forEach((val, i) => {
+    const c = row.getCell(i + 1);
+    c.value = val;
+    c.font = { bold: true, name: "Arial", size: 9, color: { argb: color.fg } };
+    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: color.bg } };
+    c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    c.border = bdr;
+  });
 }
 
-function styleLabel(cell) {
-  cell.font = { bold: true, name: "Arial", size: 9, color: { argb: "FF374151" } };
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } };
-  cell.alignment = { horizontal: "left", vertical: "middle" };
-  cell.border = border;
-}
-
-function styleValue(cell, isNum = false) {
-  cell.font = { name: "Arial", size: 10 };
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFFFF" } };
-  cell.alignment = { horizontal: isNum ? "center" : "left", vertical: "middle" };
-  cell.border = border;
-}
-
-function styleVisitHeader(cell) {
-  cell.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 11 };
-  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF111827" } };
-  cell.alignment = { horizontal: "left", vertical: "middle" };
-  cell.border = thickBorder;
+function applyDataRow(row, vals, numCols = []) {
+  row.height = 18;
+  vals.forEach((val, i) => {
+    const c = row.getCell(i + 1);
+    c.value = val ?? "—";
+    c.font = { name: "Arial", size: 9 };
+    c.alignment = { horizontal: numCols.includes(i) ? "center" : "left", vertical: "middle", wrapText: false };
+    c.border = bdr;
+    // alternate fill — even rows light gray
+    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFAFAFA" } };
+  });
 }
 
 async function downloadExcel(rows) {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Patrika Director Office";
-  wb.created = new Date();
 
-  // ── Sheet 1: Summary ────────────────────────────────────────────────────
-  const ws = wb.addWorksheet("Summary", { views: [{ showGridLines: false }] });
-  ws.columns = [{ width: 36 }, { width: 22 }];
+  // ─── SEGMENT SHEETS ───────────────────────────────────────────────────────
+  // Each segment gets its own sheet, rows = one data row per entry per visit
 
-  const addSummaryRow = (label, value, bgArgb, bold = false) => {
-    const row = ws.addRow([label, value]);
-    row.height = 22;
-    const c1 = row.getCell(1);
-    const c2 = row.getCell(2);
-    if (bgArgb) {
-      [c1, c2].forEach(c => {
-        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bgArgb } };
-        c.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Arial", size: 10 };
-        c.alignment = { horizontal: "center", vertical: "middle" };
-        c.border = border;
-      });
-    } else {
-      c1.font = { bold, name: "Arial", size: 10 };
-      c1.alignment = { horizontal: "left", vertical: "middle" };
-      c1.border = border;
-      c2.font = { bold, name: "Arial", size: 10 };
-      c2.alignment = { horizontal: "center", vertical: "middle" };
-      c2.border = border;
-      if (bold) {
-        [c1, c2].forEach(c => c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } });
-      }
-    }
+  // 1. BRANCH HEAD
+  const wsBH = wb.addWorksheet("Branch Head", { views: [{ showGridLines: false, state: "frozen", ySplit: 1 }] });
+  const bhCols = [
+    { header: "Branch Name", key: "branch", width: 18 },
+    { header: "Date of Visit", key: "date", width: 14 },
+    { header: "Visited By", key: "visitedBy", width: 16 },
+    { header: "Name of Branch Head", key: "name", width: 22 },
+    { header: "Mobile No.", key: "mobile", width: 14 },
+    { header: "Current Copies", key: "daily_copies", width: 14 },
+    { header: "Last Year Copies", key: "last_year_copies", width: 16 },
+    { header: "Growth/Decline %", key: "growth_pct", width: 14 },
+    { header: "Monthly Revenue (₹)", key: "monthly_revenue", width: 18 },
+    { header: "Outstanding (₹)", key: "outstanding", width: 16 },
+    { header: "Staff Vacancy", key: "staff_vacancy", width: 12 },
+    { header: "Q1. 3 Biggest Problems", key: "q1_problems", width: 30 },
+    { header: "Q2. Circulation Growth/Decline Reason", key: "q2_circulation_reason", width: 32 },
+    { header: "Q3. Recovery Barrier", key: "q3_recovery_barrier", width: 28 },
+    { header: "Q4. Ad Revenue Suggestion", key: "q4_ad_revenue", width: 28 },
+    { header: "Q5. HO Support Required", key: "q5_ho_help", width: 26 },
+    { header: "Team Observation", key: "team_observation", width: 28 },
+  ];
+  wsBH.columns = bhCols.map(c => ({ width: c.width }));
+  applyHeader(wsBH.addRow(bhCols.map(c => c.header)), bhCols.map(c => c.header), SEG_COLORS.BH);
+  const numBH = [5, 6, 7, 8, 9];
+  rows.forEach(r => {
+    (r._bhArr.length ? r._bhArr : [{}]).forEach(e => {
+      applyDataRow(wsBH.addRow([
+        r.branch, r.date, r.visitedBy,
+        e.name || "—", e.mobile || "—",
+        e.daily_copies || "—", e.last_year_copies || "—",
+        e.growth_pct ? `${e.growth_pct}%` : "—",
+        e.monthly_revenue || "—", e.outstanding || "—", e.staff_vacancy || "—",
+        e.q1_problems || "—", e.q2_circulation_reason || "—",
+        e.q3_recovery_barrier || "—", e.q4_ad_revenue || "—",
+        e.q5_ho_help || "—", e.team_observation || "—",
+      ]), numBH);
+    });
+  });
+
+  // 2. CIRCULATION
+  const wsCirc = wb.addWorksheet("Circulation", { views: [{ showGridLines: false, state: "frozen", ySplit: 1 }] });
+  const circCols = [
+    { header: "Branch Name", width: 18 }, { header: "Date of Visit", width: 14 },
+    { header: "Visited By", width: 16 }, { header: "Name of Circulation Incharge", width: 26 },
+    { header: "Mobile No.", width: 14 }, { header: "Designation", width: 18 },
+    { header: "Decline Area", width: 20 }, { header: "Decline Reason", width: 28 },
+    { header: "Q3. Competitor Strong Area", width: 28 }, { header: "Q4. Growth Potential", width: 26 },
+    { header: "Q5. 90-Day Growth Possible", width: 26 },
+  ];
+  wsCirc.columns = circCols.map(c => ({ width: c.width }));
+  applyHeader(wsCirc.addRow(circCols.map(c => c.header)), circCols.map(c => c.header), SEG_COLORS.CIRC);
+  rows.forEach(r => {
+    (r._circArr.length ? r._circArr : [{}]).forEach(e => {
+      applyDataRow(wsCirc.addRow([
+        r.branch, r.date, r.visitedBy,
+        e.name || "—", e.mobile || "—", e.designation || "—",
+        e.decline_area || "—", e.decline_reason || "—",
+        e.q3_competitor_strong || "—", e.q4_growth_potential || "—", e.q5_90_day_growth || "—",
+      ]));
+    });
+  });
+
+  // 3. AGENT
+  const wsAgent = wb.addWorksheet("Agent", { views: [{ showGridLines: false, state: "frozen", ySplit: 1 }] });
+  const agentCols = [
+    { header: "Branch Name", width: 18 }, { header: "Date of Visit", width: 14 },
+    { header: "Visited By", width: 16 }, { header: "Agent Name", width: 22 },
+    { header: "Mobile No.", width: 14 }, { header: "Agency", width: 18 },
+    { header: "Area", width: 16 }, { header: "Current Copies", width: 14 },
+    { header: "Last Year Copies", width: 16 }, { header: "Outstanding (₹)", width: 16 },
+    { header: "Payment Regularity", width: 18 },
+    { header: "Q1. Biggest Problem", width: 28 }, { header: "Q2. Competitor Offer", width: 26 },
+    { header: "Q3. 3-Month Growth", width: 22 }, { header: "Q4. Help Required", width: 24 },
+    { header: "Q5. Market Growth Area", width: 24 },
+    { header: "Commitment (Copies)", width: 18 }, { header: "Timeline", width: 16 },
+  ];
+  wsAgent.columns = agentCols.map(c => ({ width: c.width }));
+  applyHeader(wsAgent.addRow(agentCols.map(c => c.header)), agentCols.map(c => c.header), SEG_COLORS.AGENT);
+  const numAgent = [7, 8, 9, 16];
+  rows.forEach(r => {
+    (r._agentArr.length ? r._agentArr : [{}]).forEach(e => {
+      applyDataRow(wsAgent.addRow([
+        r.branch, r.date, r.visitedBy,
+        e.agent_name || "—", e.mobile || "—", e.agency || "—", e.area || "—",
+        e.current_copies || "—", e.last_year_copies || "—", e.outstanding || "—",
+        e.payment_regularity || "—", e.q1_problem || "—", e.q2_competitor_offer || "—",
+        e.q3_3month_growth || "—", e.q4_company_help || "—", e.q5_market_growth || "—",
+        e.additional_copies || "—", e.timeline || "—",
+      ]), numAgent);
+    });
+  });
+
+  // 4. HAWKER
+  const wsHawker = wb.addWorksheet("Hawker", { views: [{ showGridLines: false, state: "frozen", ySplit: 1 }] });
+  const hawkerCols = [
+    { header: "Branch Name", width: 18 }, { header: "Date of Visit", width: 14 },
+    { header: "Visited By", width: 16 }, { header: "Hawker Name", width: 22 },
+    { header: "Mobile", width: 14 }, { header: "Area", width: 16 },
+    { header: "Q1. Top Selling Newspaper", width: 26 }, { header: "Q2. Reader Complaints", width: 28 },
+    { header: "Q3. Competitor Scheme", width: 26 }, { header: "Q4. Demand Growth Area", width: 26 },
+    { header: "Q5. Delivery Problems", width: 26 }, { header: "Team Remarks", width: 28 },
+  ];
+  wsHawker.columns = hawkerCols.map(c => ({ width: c.width }));
+  applyHeader(wsHawker.addRow(hawkerCols.map(c => c.header)), hawkerCols.map(c => c.header), SEG_COLORS.HAWKER);
+  rows.forEach(r => {
+    (r._hawkerArr.length ? r._hawkerArr : [{}]).forEach(e => {
+      applyDataRow(wsHawker.addRow([
+        r.branch, r.date, r.visitedBy,
+        e.hawker_name || "—", e.mobile || "—", e.area || "—",
+        e.q1_top_newspaper || "—", e.q2_reader_complaint || "—",
+        e.q3_competitor_scheme || "—", e.q4_demand_area || "—",
+        e.q5_delivery_problem || "—", e.team_remarks || "—",
+      ]));
+    });
+  });
+
+  // 5. CORRESPONDENT
+  const wsCorr = wb.addWorksheet("Correspondent", { views: [{ showGridLines: false, state: "frozen", ySplit: 1 }] });
+  const corrCols = [
+    { header: "Branch Name", width: 18 }, { header: "Date of Visit", width: 14 },
+    { header: "Visited By", width: 16 }, { header: "Correspondent Name", width: 24 },
+    { header: "Mobile", width: 14 }, { header: "Area", width: 16 },
+    { header: "Q1. Reader Sentiment", width: 28 }, { header: "Q2. Weak Areas", width: 26 },
+    { header: "Q3. Competitor Strong", width: 26 }, { header: "Q4. Content Feedback", width: 28 },
+    { header: "Q5. Growth Scope", width: 26 }, { header: "Observation", width: 28 },
+  ];
+  wsCorr.columns = corrCols.map(c => ({ width: c.width }));
+  applyHeader(wsCorr.addRow(corrCols.map(c => c.header)), corrCols.map(c => c.header), SEG_COLORS.CORR);
+  rows.forEach(r => {
+    (r._corrArr.length ? r._corrArr : [{}]).forEach(e => {
+      applyDataRow(wsCorr.addRow([
+        r.branch, r.date, r.visitedBy,
+        e.name || "—", e.mobile || "—", e.area || "—",
+        e.q1_reader_sentiment || "—", e.q2_weak_areas || "—",
+        e.q3_competitor_strong || "—", e.q4_content_feedback || "—",
+        e.q5_growth_scope || "—", e.observation || "—",
+      ]));
+    });
+  });
+
+  // 6. ADVERTISEMENT
+  const wsAdv = wb.addWorksheet("Advertisement", { views: [{ showGridLines: false, state: "frozen", ySplit: 1 }] });
+  const advCols = [
+    { header: "Branch Name", width: 18 }, { header: "Date of Visit", width: 14 },
+    { header: "Visited By", width: 16 }, { header: "Member Name", width: 22 },
+    { header: "Designation", width: 18 }, { header: "Ad Target (₹)", width: 16 },
+    { header: "Achievement (₹)", width: 16 }, { header: "Achievement %", width: 14 },
+    { header: "Q3. Why Clients Lost", width: 28 }, { header: "Q4. Top Opportunity", width: 26 },
+    { header: "Q5. 6-Month Potential", width: 26 },
+  ];
+  wsAdv.columns = advCols.map(c => ({ width: c.width }));
+  applyHeader(wsAdv.addRow(advCols.map(c => c.header)), advCols.map(c => c.header), SEG_COLORS.ADV);
+  const numAdv = [5, 6, 7];
+  rows.forEach(r => {
+    (r._advArr.length ? r._advArr : [{}]).forEach(e => {
+      const pct = e.target && e.achievement ? `${((e.achievement/e.target)*100).toFixed(1)}%` : "—";
+      applyDataRow(wsAdv.addRow([
+        r.branch, r.date, r.visitedBy,
+        e.name || "—", e.designation || "—",
+        e.target || "—", e.achievement || "—", pct,
+        e.q3_why_lost || "—", e.q4_top_opportunity || "—", e.q5_6month_potential || "—",
+      ]), numAdv);
+    });
+  });
+
+  // 7. AD AGENCY
+  const wsAgency = wb.addWorksheet("Ad Agency", { views: [{ showGridLines: false, state: "frozen", ySplit: 1 }] });
+  const agencyCols = [
+    { header: "Branch Name", width: 18 }, { header: "Date of Visit", width: 14 },
+    { header: "Visited By", width: 16 }, { header: "Agency Name", width: 24 },
+    { header: "Contact Person", width: 20 },
+    { header: "Q1. Market Reputation", width: 28 }, { header: "Q2. Advertiser Complaints", width: 28 },
+    { header: "Q3. Competitor Strength", width: 26 }, { header: "Q4. Sector Potential", width: 26 },
+    { header: "Q5. Improvements", width: 26 },
+  ];
+  wsAgency.columns = agencyCols.map(c => ({ width: c.width }));
+  applyHeader(wsAgency.addRow(agencyCols.map(c => c.header)), agencyCols.map(c => c.header), SEG_COLORS.AGENCY);
+  rows.forEach(r => {
+    (r._agencyArr.length ? r._agencyArr : [{}]).forEach(e => {
+      applyDataRow(wsAgency.addRow([
+        r.branch, r.date, r.visitedBy,
+        e.agency_name || "—", e.contact_person || "—",
+        e.q1_market_reputation || "—", e.q2_advertiser_complaint || "—",
+        e.q3_competitor_strength || "—", e.q4_sector_potential || "—", e.q5_improvement || "—",
+      ]));
+    });
+  });
+
+  // 8. RECOVERY
+  const wsRec = wb.addWorksheet("Recovery", { views: [{ showGridLines: false, state: "frozen", ySplit: 1 }] });
+  const recCols = [
+    { header: "Branch Name", width: 18 }, { header: "Date of Visit", width: 14 },
+    { header: "Visited By", width: 16 }, { header: "Party Name", width: 24 },
+    { header: "Outstanding (₹)", width: 18 }, { header: "Ageing (Days)", width: 14 },
+    { header: "Reason", width: 26 }, { header: "Recovery Plan", width: 26 },
+    { header: "Expected Date", width: 16 },
+  ];
+  wsRec.columns = recCols.map(c => ({ width: c.width }));
+  applyHeader(wsRec.addRow(recCols.map(c => c.header)), recCols.map(c => c.header), SEG_COLORS.RECOVERY);
+  const numRec = [4, 5];
+  rows.forEach(r => {
+    (r._allParties.length ? r._allParties : [{}]).forEach(p => {
+      applyDataRow(wsRec.addRow([
+        r.branch, r.date, r.visitedBy,
+        p.party || "—", p.outstanding || "—", p.ageing || "—",
+        p.reason || "—", p.recovery_plan || "—", p.expected_date || "—",
+      ]), numRec);
+    });
+  });
+
+  // ─── SUMMARY SHEET ────────────────────────────────────────────────────────
+  const wsSummary = wb.addWorksheet("Summary", { views: [{ showGridLines: false }] });
+  wsSummary.columns = [{ width: 36 }, { width: 22 }];
+
+  const addSum = (label, value, isBold = false, bgArgb = null) => {
+    const row = wsSummary.addRow([label, value]);
+    row.height = 20;
+    [1, 2].forEach(i => {
+      const c = row.getCell(i);
+      c.font = { bold: isBold, name: "Arial", size: 10, color: { argb: bgArgb ? "FFFFFFFF" : "FF111827" } };
+      c.border = bdr;
+      c.alignment = { horizontal: i === 2 ? "center" : "left", vertical: "middle" };
+      if (bgArgb) c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bgArgb } };
+      else if (isBold) c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } };
+    });
   };
 
-  // Title
-  const titleRow = ws.addRow(["VISIT MATRIX SUMMARY", ""]);
-  ws.mergeCells(`A${titleRow.number}:B${titleRow.number}`);
-  const tc = titleRow.getCell(1);
+  const titleR = wsSummary.addRow(["VISIT MATRIX SUMMARY", ""]);
+  wsSummary.mergeCells(`A1:B1`);
+  const tc = titleR.getCell(1);
   tc.value = "VISIT MATRIX SUMMARY";
   tc.font = { bold: true, size: 14, color: { argb: "FFFFFFFF" }, name: "Arial" };
   tc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F3864" } };
   tc.alignment = { horizontal: "center", vertical: "middle" };
-  tc.border = thickBorder;
-  titleRow.height = 36;
+  tc.border = bdr;
+  titleR.height = 36;
 
-  ws.addRow([]);
-  addSummaryRow("Generated On", new Date().toLocaleDateString("en-IN"));
-  addSummaryRow("Total Visits", rows.length);
-  addSummaryRow("Total Branches", new Set(rows.map(r => r.branch)).size);
-  ws.addRow([]);
-  addSummaryRow("METRIC", "TOTAL", "FFB91C1C");
-  addSummaryRow("Total Daily Copies", rows.reduce((s, r) => s + (r.dailyCopies || 0), 0), null, true);
-  addSummaryRow("Total LY Copies", rows.reduce((s, r) => s + (r.lyCopies || 0), 0));
-  addSummaryRow("Total Revenue (₹)", rows.reduce((s, r) => s + (r.revenue || 0), 0), null, true);
-  addSummaryRow("Total BH Outstanding (₹)", rows.reduce((s, r) => s + (r.bhOutstanding || 0), 0));
-  addSummaryRow("Total Ad Target (₹)", rows.reduce((s, r) => s + (r.adTarget || 0), 0), null, true);
-  addSummaryRow("Total Ad Achievement (₹)", rows.reduce((s, r) => s + (r.adAchiev || 0), 0));
-  addSummaryRow("Total Agent Outstanding (₹)", rows.reduce((s, r) => s + (r.agentOutstanding || 0), 0), null, true);
-  addSummaryRow("Total Recovery Outstanding (₹)", rows.reduce((s, r) => s + (r.totalRecovery || 0), 0));
-  addSummaryRow("Total Weak Agents", rows.reduce((s, r) => s + (r.weakAgentsCount || 0), 0), null, true);
-  addSummaryRow("Total Lost Clients", rows.reduce((s, r) => s + (r.lostClientsCount || 0), 0));
+  wsSummary.addRow([]);
+  addSum("Generated On", new Date().toLocaleDateString("en-IN"));
+  addSum("Total Visits", rows.length, true);
+  addSum("Total Branches", new Set(rows.map(r => r.branch)).size);
+  wsSummary.addRow([]);
+  addSum("METRIC", "TOTAL", true, "FFB91C1C");
+  addSum("Total Daily Copies", rows.reduce((s, r) => s + (r.dailyCopies || 0), 0), true);
+  addSum("Total LY Copies", rows.reduce((s, r) => s + (r.lyCopies || 0), 0));
+  addSum("Total Revenue (₹)", rows.reduce((s, r) => s + (r.revenue || 0), 0), true);
+  addSum("Total BH Outstanding (₹)", rows.reduce((s, r) => s + (r.bhOutstanding || 0), 0));
+  addSum("Total Ad Target (₹)", rows.reduce((s, r) => s + (r.adTarget || 0), 0), true);
+  addSum("Total Ad Achievement (₹)", rows.reduce((s, r) => s + (r.adAchiev || 0), 0));
+  addSum("Total Agent Outstanding (₹)", rows.reduce((s, r) => s + (r.agentOutstanding || 0), 0), true);
+  addSum("Total Recovery Outstanding (₹)", rows.reduce((s, r) => s + (r.totalRecovery || 0), 0));
+  addSum("Total Weak Agents", rows.reduce((s, r) => s + (r.weakAgentsCount || 0), 0), true);
+  addSum("Total Lost Clients", rows.reduce((s, r) => s + (r.lostClientsCount || 0), 0));
 
-  // ── Sheet 2: Visit Matrix (Vertical) ────────────────────────────────────
-  const wm = wb.addWorksheet("Visit Matrix", { views: [{ showGridLines: false }] });
-  wm.columns = [
-    { width: 28 }, // Label
-    { width: 30 }, // Value 1
-    { width: 28 }, // Label
-    { width: 30 }, // Value 2
-  ];
+  // Move Summary to first position
+  wb.moveSheet("Summary", 0);
 
-  let currentRow = 1;
-
-  const addBlankRow = () => {
-    wm.addRow([]);
-    currentRow++;
-  };
-
-  const addSectionHeader = (title, colorArgb) => {
-    const row = wm.getRow(currentRow);
-    wm.mergeCells(`A${currentRow}:D${currentRow}`);
-    const cell = row.getCell(1);
-    cell.value = title;
-    styleHeader(cell, colorArgb);
-    row.height = 24;
-    currentRow++;
-  };
-
-  const addDataRow = (label1, val1, label2, val2, isNum1 = false, isNum2 = false) => {
-    const row = wm.getRow(currentRow);
-    row.height = 20;
-    const c1 = row.getCell(1); c1.value = label1; styleLabel(c1);
-    const c2 = row.getCell(2); c2.value = val1 ?? "—"; styleValue(c2, isNum1);
-    if (label2 !== undefined) {
-      const c3 = row.getCell(3); c3.value = label2; styleLabel(c3);
-      const c4 = row.getCell(4); c4.value = val2 ?? "—"; styleValue(c4, isNum2);
-    } else {
-      wm.mergeCells(`B${currentRow}:D${currentRow}`);
-    }
-    currentRow++;
-  };
-
-  const addFullRow = (label, value, isNum = false) => {
-    const row = wm.getRow(currentRow);
-    row.height = 20;
-    const c1 = row.getCell(1); c1.value = label; styleLabel(c1);
-    wm.mergeCells(`B${currentRow}:D${currentRow}`);
-    const c2 = row.getCell(2); c2.value = value ?? "—"; styleValue(c2, isNum);
-    currentRow++;
-  };
-
-  // ── Per visit block ──
-  for (const row of rows) {
-    // Visit header
-    const vRow = wm.getRow(currentRow);
-    wm.mergeCells(`A${currentRow}:D${currentRow}`);
-    const vCell = vRow.getCell(1);
-    vCell.value = `${row.branch}   ·   ${row.date}   ·   Visited by: ${row.visitedBy}`;
-    styleVisitHeader(vCell);
-    vRow.height = 30;
-    currentRow++;
-
-    // ── Branch Head ──
-    addSectionHeader("BRANCH HEAD", SECTION_COLORS.BH);
-    addDataRow("Name(s)", row.bhNames, "Designation", row.bhDesig);
-    addDataRow("Mobile", row.bhMobile, "Staff Vacancy", row.staffVacancy);
-    addDataRow("Daily Copies", row.dailyCopies, "LY Copies", row.lyCopies, true, true);
-    addDataRow("Growth %", row.growth !== null ? `${row.growth}%` : "—", "Monthly Revenue (₹)", row.revenue ? `₹${Number(row.revenue).toLocaleString("en-IN")}` : "—", true, true);
-    addFullRow("BH Outstanding (₹)", row.bhOutstanding ? `₹${Number(row.bhOutstanding).toLocaleString("en-IN")}` : "—", true);
-
-    // Branch Head questions (if any)
-    for (const bh of row._bhArr) {
-      if (bh.q1_problems) addFullRow("Q1. Biggest Problems", bh.q1_problems);
-      if (bh.q2_circulation_reason) addFullRow("Q2. Circulation Reason", bh.q2_circulation_reason);
-      if (bh.q3_recovery_barrier) addFullRow("Q3. Recovery Barrier", bh.q3_recovery_barrier);
-      if (bh.q4_ad_revenue) addFullRow("Q4. Ad Revenue Suggestion", bh.q4_ad_revenue);
-      if (bh.q5_ho_help) addFullRow("Q5. HO Support Required", bh.q5_ho_help);
-      if (bh.team_observation) addFullRow("Team Observation", bh.team_observation);
-    }
-
-    // ── Circulation ──
-    addSectionHeader("CIRCULATION", SECTION_COLORS.CIRC);
-    addDataRow("Incharge(s)", row.circNames, "Weak Agents Count", row.weakAgentsCount, false, true);
-    if (row.weakAgentsList !== "—") addFullRow("Weak Agent Names", row.weakAgentsList);
-    for (const c of row._circArr) {
-      if (c.decline_area) addDataRow("Decline Area", c.decline_area, "Decline Reason", c.decline_reason);
-      if (c.q3_competitor_strong) addFullRow("Q3. Competitor Strong Area", c.q3_competitor_strong);
-      if (c.q4_growth_potential) addFullRow("Q4. Growth Potential", c.q4_growth_potential);
-      if (c.q5_90_day_growth) addFullRow("Q5. 90-Day Growth", c.q5_90_day_growth);
-    }
-
-    // ── Agent ──
-    addSectionHeader("AGENT", SECTION_COLORS.AGENT);
-    addDataRow("Agent Name(s)", row.agentNames, "Total Agents", row.agentCount, false, true);
-    addFullRow("Agent Outstanding (₹)", row.agentOutstanding ? `₹${Number(row.agentOutstanding).toLocaleString("en-IN")}` : "—", true);
-    for (const a of row._agentArr) {
-      if (a.agent_name) addDataRow("Agent", a.agent_name, "Area", a.area);
-      if (a.current_copies) addDataRow("Current Copies", a.current_copies, "LY Copies", a.last_year_copies, true, true);
-      if (a.q1_problem) addFullRow("Q1. Biggest Problem", a.q1_problem);
-      if (a.q2_competitor_offer) addFullRow("Q2. Competitor Offer", a.q2_competitor_offer);
-      if (a.additional_copies) addDataRow("Commitment (Copies)", a.additional_copies, "Timeline", a.timeline, true);
-    }
-
-    // ── Hawker ──
-    addSectionHeader("HAWKER", SECTION_COLORS.HAWKER);
-    addDataRow("Hawker Name(s)", row.hawkerNames, "Total Hawkers", row.hawkerCount, false, true);
-    for (const h of row._hawkerArr) {
-      if (h.hawker_name) addDataRow("Hawker", h.hawker_name, "Area", h.area);
-      if (h.q1_top_newspaper) addFullRow("Q1. Top Selling Newspaper", h.q1_top_newspaper);
-      if (h.q2_reader_complaint) addFullRow("Q2. Reader Complaints", h.q2_reader_complaint);
-    }
-
-    // ── Correspondent ──
-    addSectionHeader("CORRESPONDENT", SECTION_COLORS.CORR);
-    addDataRow("Correspondent(s)", row.corrNames, "Total", row.corrCount, false, true);
-    for (const c of row._corrArr) {
-      if (c.name) addDataRow("Name", c.name, "Area", c.area);
-      if (c.q1_reader_sentiment) addFullRow("Q1. Reader Sentiment", c.q1_reader_sentiment);
-      if (c.q4_content_feedback) addFullRow("Q4. Content Feedback", c.q4_content_feedback);
-    }
-
-    // ── Advertisement ──
-    addSectionHeader("ADVERTISEMENT", SECTION_COLORS.ADV);
-    addDataRow("Member(s)", row.advNames, "Lost Clients Count", row.lostClientsCount, false, true);
-    addDataRow("Ad Target (₹)", row.adTarget ? `₹${Number(row.adTarget).toLocaleString("en-IN")}` : "—", "Ad Achievement (₹)", row.adAchiev ? `₹${Number(row.adAchiev).toLocaleString("en-IN")}` : "—", true, true);
-    addFullRow("Achievement %", row.adPct ? `${row.adPct}%` : "—", true);
-    if (row.lostClientsList !== "—") addFullRow("Lost Client Names", row.lostClientsList);
-    for (const a of row._advArr) {
-      if (a.q3_why_lost) addFullRow("Q3. Why Clients Lost", a.q3_why_lost);
-      if (a.q4_top_opportunity) addFullRow("Q4. Top Opportunity", a.q4_top_opportunity);
-      if (a.q5_6month_potential) addFullRow("Q5. 6-Month Potential", a.q5_6month_potential);
-    }
-
-    // ── Ad Agency ──
-    addSectionHeader("AD AGENCY", SECTION_COLORS.AGENCY);
-    addDataRow("Agency Name(s)", row.agencyNames, "Total Agencies", row.agencyCount, false, true);
-    for (const a of row._agencyArr) {
-      if (a.q1_market_reputation) addFullRow("Q1. Market Reputation", a.q1_market_reputation);
-      if (a.q5_improvement) addFullRow("Q5. Improvement Suggested", a.q5_improvement);
-    }
-
-    // ── Recovery ──
-    addSectionHeader("RECOVERY", SECTION_COLORS.RECOVERY);
-    addDataRow("Parties Tracked", row.recoveryParties, "Total Outstanding (₹)", row.totalRecovery ? `₹${Number(row.totalRecovery).toLocaleString("en-IN")}` : "—", true, true);
-    if (row._allParties.length > 0) {
-      // Party table header
-      const ph = wm.getRow(currentRow);
-      ["Party Name", "Outstanding (₹)", "Ageing (days)", "Recovery Plan"].forEach((h, i) => {
-        const c = ph.getCell(i + 1);
-        c.value = h;
-        c.font = { bold: true, name: "Arial", size: 9, color: { argb: "FFFFFFFF" } };
-        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4B5563" } };
-        c.alignment = { horizontal: "center", vertical: "middle" };
-        c.border = border;
-      });
-      ph.height = 18;
-      currentRow++;
-      for (const p of row._allParties) {
-        const pr = wm.getRow(currentRow);
-        [p.party || "—", p.outstanding ? `₹${Number(p.outstanding).toLocaleString("en-IN")}` : "—", p.ageing || "—", p.recovery_plan || "—"].forEach((v, i) => {
-          const c = pr.getCell(i + 1);
-          c.value = v;
-          c.font = { name: "Arial", size: 9 };
-          c.alignment = { horizontal: i > 0 ? "center" : "left", vertical: "middle" };
-          c.border = border;
-        });
-        pr.height = 18;
-        currentRow++;
-      }
-    }
-
-    addBlankRow();
-    addBlankRow();
-  }
-
-  // Download
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
@@ -369,7 +384,7 @@ async function downloadExcel(rows) {
   URL.revokeObjectURL(url);
 }
 
-// ── Visit Card (UI) ──────────────────────────────────────────────────────────
+// ── Visit Card (UI) ───────────────────────────────────────────────────────────
 function VisitCard({ row }) {
   const growthColor = row.growth === null ? "" : row.growth < 0 ? "text-red-600" : "text-emerald-700";
   const Section = ({ title, children }) => (
@@ -456,7 +471,7 @@ function VisitCard({ row }) {
   );
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 export default function VisitMatrix() {
   const [visits, setVisits] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -510,7 +525,6 @@ export default function VisitMatrix() {
             </Button>
           </div>
         </div>
-
         {showFilters && (
           <div className="border border-border bg-white p-5 mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
