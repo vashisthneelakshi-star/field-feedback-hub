@@ -17,7 +17,7 @@ import { ArrowLeft, Save, Loader2, FileText, Sparkles, Printer, BarChart3, Scrol
 import { toast } from "sonner";
 
 // ── Multi-entry card component ─────────────────────────────────────────────
-function MultiEntrySegment({ segKey, schema, data, onChange }) {
+function MultiEntrySegment({ segKey, schema, data, onChange, readOnly = false }) {
   const entries = Array.isArray(data) ? data : [];
   const [collapsed, setCollapsed] = useState({});
 
