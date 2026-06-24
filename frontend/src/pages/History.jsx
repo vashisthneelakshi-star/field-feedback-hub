@@ -78,22 +78,30 @@ export default function HistoryPage() {
           <div className="space-y-8">
             {byVisit.map(([vid, group]) => (
               <div key={vid} className="border border-border bg-white">
-                {/* Visit header — full name clickable */}
+
+                {/* Visit header */}
                 <div className="border-b border-foreground px-5 py-3 flex items-center justify-between bg-secondary text-secondary-foreground">
                   <Link to={`/visits/${vid}`} className="hover:opacity-70">
                     <div className="text-[10px] uppercase tracking-[0.2em] opacity-70">Branch Visit</div>
                     <h3 className="text-xl font-bold">{group.branch_name}</h3>
                   </Link>
                   <div className="flex items-center gap-3">
-                  {isAdmin && (
-                  <Link to={`/visits/${vid}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90">
-                  Edit
-                  </Link>
-                  )}
-                  <Link to={`/visits/${vid}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70">
-                  Open <ExternalLink className="w-3.5 h-3.5" />
-                  </Link>
+                    {isAdmin && (
+                      <Link
+                        to={`/visits/${vid}`}
+                        className="text-xs uppercase tracking-wider px-3 py-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+                      >
+                        Edit
+                      </Link>
+                    )}
+                    <Link
+                      to={`/visits/${vid}`}
+                      className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70"
+                    >
+                      Open <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
                   </div>
+                </div>
 
                 {/* Audit log items */}
                 <div className="divide-y divide-border">
@@ -146,6 +154,7 @@ export default function HistoryPage() {
                     );
                   })}
                 </div>
+
               </div>
             ))}
           </div>
