@@ -5,7 +5,6 @@ import AppHeader from "../components/AppHeader";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { ExternalLink, Loader2, Download, Filter, X } from "lucide-react";
-import * as XLSX from "xlsx";
 
 const fmtINR = (n) => {
   const v = Number(n) || 0;
@@ -70,127 +69,231 @@ function buildRow(v) {
   };
 }
 
-// ── Excel Download using SheetJS ──────────────────────────────────────────────
-function makeSheet(headers, dataRows, colWidths) {
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-  ws["!cols"] = colWidths.map(w => ({ wch: w }));
-  ws["!freeze"] = { xSplit: 0, ySplit: 1, topLeftCell: "A2", activePane: "bottomLeft" };
-  return ws;
-}
+// ── Excel Download ─────────────────────────────────────────────────────────
+async function downloadExcel(rows) {
+  const ExcelJS = (await import("exceljs/dist/exceljs.min.js")).default;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Patrika Director Office";
 
-function downloadExcel(rows) {
-  const wb = XLSX.utils.book_new();
+  // Colors
+  const BLUE_BORDER = { style: "medium", color: { argb: "FF1D6FA8" } };
+  const bdr = { top: BLUE_BORDER, left: BLUE_BORDER, bottom: BLUE_BORDER, right: BLUE_BORDER };
+  const thinBdr = { top: { style: "thin", color: { argb: "FF1D6FA8" } }, left: { style: "thin", color: { argb: "FF1D6FA8" } }, bottom: { style: "thin", color: { argb: "FF1D6FA8" } }, right: { style: "thin", color: { argb: "FF1D6FA8" } } };
 
-  // ── 1. Summary ──
-  const summaryData = [
-    ["PATRIKA DIRECTOR OFFICE — VISIT MATRIX REPORT"],
-    ["Generated On", new Date().toLocaleDateString("en-IN")],
-    ["Total Visits", rows.length],
-    ["Total Branches", new Set(rows.map(r => r.branch)).size],
-    [],
-    ["METRIC", "TOTAL"],
-    ["Total Daily Copies", rows.reduce((s, r) => s + (r.dailyCopies || 0), 0)],
-    ["Total LY Copies", rows.reduce((s, r) => s + (r.lyCopies || 0), 0)],
-    ["Total Revenue (₹)", rows.reduce((s, r) => s + (r.revenue || 0), 0)],
-    ["Total BH Outstanding (₹)", rows.reduce((s, r) => s + (r.bhOutstanding || 0), 0)],
-    ["Total Ad Target (₹)", rows.reduce((s, r) => s + (r.adTarget || 0), 0)],
-    ["Total Ad Achievement (₹)", rows.reduce((s, r) => s + (r.adAchiev || 0), 0)],
-    ["Total Agent Outstanding (₹)", rows.reduce((s, r) => s + (r.agentOutstanding || 0), 0)],
-    ["Total Recovery Outstanding (₹)", rows.reduce((s, r) => s + (r.totalRecovery || 0), 0)],
-    ["Total Weak Agents", rows.reduce((s, r) => s + (r.weakAgentsCount || 0), 0)],
-    ["Total Lost Clients", rows.reduce((s, r) => s + (r.lostClientsCount || 0), 0)],
+  const SEG = {
+    BH:       "FFB91C1C",
+    CIRC:     "FF166534",
+    AGENT:    "FF92400E",
+    HAWKER:   "FF1E3A5F",
+    CORR:     "FF4A1D96",
+    ADV:      "FF7C2D12",
+    AGENCY:   "FF134E4A",
+    RECOVERY: "FF312E81",
+    SUMMARY:  "FF1F3864",
+  };
+
+  // Helper: add a sheet with header row + data rows
+  const addSheet = (name, colDefs, dataFn) => {
+    const ws = wb.addWorksheet(name, {
+      views: [{ showGridLines: false, state: "frozen", ySplit: 1 }],
+    });
+    ws.columns = colDefs.map(c => ({ width: c.w }));
+
+    // Header row
+    const hRow = ws.addRow(colDefs.map(c => c.h));
+    hRow.height = 26;
+    hRow.eachCell((cell, i) => {
+      cell.font = { bold: true, name: "Arial", size: 9, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colDefs[i-1].color || SEG.SUMMARY } };
+      cell.alignment = { horizontal: "center", vertical: "middle", wrapText: false };
+      cell.border = bdr;
+    });
+
+    // Data rows
+    dataFn(ws, thinBdr);
+    return ws;
+  };
+
+  const addDataRow = (ws, vals, numCols, thinBdr) => {
+    const row = ws.addRow(vals);
+    row.height = 18;
+    row.eachCell((cell, i) => {
+      const isNum = numCols && numCols.includes(i - 1);
+      cell.font = { name: "Arial", size: 9 };
+      cell.alignment = { horizontal: isNum ? "center" : "left", vertical: "middle" };
+      cell.border = thinBdr;
+    });
+    return row;
+  };
+
+  // ── Summary Sheet ──────────────────────────────────────────────────────
+  const wsSummary = wb.addWorksheet("Summary", { views: [{ showGridLines: false }] });
+  wsSummary.columns = [{ width: 36 }, { width: 22 }];
+
+  const addSum = (label, value, bgArgb) => {
+    const row = wsSummary.addRow([label, value]);
+    row.height = 20;
+    row.eachCell((cell, i) => {
+      cell.font = { bold: !!bgArgb, name: "Arial", size: 10, color: { argb: bgArgb ? "FFFFFFFF" : "FF111827" } };
+      cell.border = thinBdr;
+      cell.alignment = { horizontal: i === 2 ? "center" : "left", vertical: "middle" };
+      if (bgArgb) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bgArgb } };
+    });
+  };
+
+  const tRow = wsSummary.addRow(["PATRIKA DIRECTOR OFFICE — VISIT MATRIX", ""]);
+  wsSummary.mergeCells("A1:B1");
+  const tc = tRow.getCell(1); tc.value = "PATRIKA DIRECTOR OFFICE — VISIT MATRIX";
+  tc.font = { bold: true, size: 13, color: { argb: "FFFFFFFF" }, name: "Arial" };
+  tc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: SEG.SUMMARY } };
+  tc.alignment = { horizontal: "center", vertical: "middle" };
+  tc.border = bdr;
+  tRow.height = 32;
+
+  wsSummary.addRow([]);
+  addSum("Generated On", new Date().toLocaleDateString("en-IN"));
+  addSum("Total Visits", rows.length);
+  addSum("Total Branches", new Set(rows.map(r => r.branch)).size);
+  wsSummary.addRow([]);
+  addSum("METRIC", "TOTAL", SEG.BH);
+  addSum("Total Daily Copies", rows.reduce((s,r)=>s+(r.dailyCopies||0),0));
+  addSum("Total LY Copies", rows.reduce((s,r)=>s+(r.lyCopies||0),0));
+  addSum("Total Revenue (₹)", rows.reduce((s,r)=>s+(r.revenue||0),0));
+  addSum("Total BH Outstanding (₹)", rows.reduce((s,r)=>s+(r.bhOutstanding||0),0));
+  addSum("Total Ad Target (₹)", rows.reduce((s,r)=>s+(r.adTarget||0),0));
+  addSum("Total Ad Achievement (₹)", rows.reduce((s,r)=>s+(r.adAchiev||0),0));
+  addSum("Total Agent Outstanding (₹)", rows.reduce((s,r)=>s+(r.agentOutstanding||0),0));
+  addSum("Total Recovery Outstanding (₹)", rows.reduce((s,r)=>s+(r.totalRecovery||0),0));
+  addSum("Total Weak Agents", rows.reduce((s,r)=>s+(r.weakAgentsCount||0),0));
+  addSum("Total Lost Clients", rows.reduce((s,r)=>s+(r.lostClientsCount||0),0));
+
+  // ── Branch Head Sheet ──────────────────────────────────────────────────
+  const bhCols = [
+    {h:"Branch Name",w:18,color:SEG.BH},{h:"Date",w:13,color:SEG.BH},{h:"Visited By",w:16,color:SEG.BH},
+    {h:"BH Name",w:22,color:SEG.BH},{h:"Mobile",w:14,color:SEG.BH},{h:"Current Copies",w:14,color:SEG.BH},
+    {h:"LY Copies",w:13,color:SEG.BH},{h:"Growth %",w:12,color:SEG.BH},{h:"Revenue (₹)",w:16,color:SEG.BH},
+    {h:"Outstanding (₹)",w:16,color:SEG.BH},{h:"Staff Vacancy",w:12,color:SEG.BH},
+    {h:"Q1. 3 Biggest Problems",w:32,color:SEG.BH},{h:"Q2. Circulation Reason",w:30,color:SEG.BH},
+    {h:"Q3. Recovery Barrier",w:28,color:SEG.BH},{h:"Q4. Ad Revenue Suggestion",w:28,color:SEG.BH},
+    {h:"Q5. HO Support",w:26,color:SEG.BH},{h:"Team Observation",w:28,color:SEG.BH},
   ];
-  const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
-  wsSummary["!cols"] = [{ wch: 36 }, { wch: 20 }];
-  XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
-
-  // ── 2. Branch Head ──
-  const bhHeaders = ["Branch Name","Date","Visited By","BH Name","Mobile","Current Copies","LY Copies","Growth %","Revenue (₹)","Outstanding (₹)","Staff Vacancy","Q1. 3 Biggest Problems","Q2. Circulation Growth/Decline Reason","Q3. Recovery Barrier","Q4. Ad Revenue Suggestion","Q5. HO Support Required","Team Observation"];
-  const bhData = [];
-  rows.forEach(r => {
-    (r._bhArr.length ? r._bhArr : [{}]).forEach(e => {
-      bhData.push([r.branch, r.date, r.visitedBy, e.name||"", e.mobile||"", e.daily_copies||"", e.last_year_copies||"", e.growth_pct ? `${e.growth_pct}%` : "", e.monthly_revenue||"", e.outstanding||"", e.staff_vacancy||"", e.q1_problems||"", e.q2_circulation_reason||"", e.q3_recovery_barrier||"", e.q4_ad_revenue||"", e.q5_ho_help||"", e.team_observation||""]);
-    });
+  addSheet("Branch Head", bhCols, (ws, tb) => {
+    rows.forEach(r => (r._bhArr.length ? r._bhArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.mobile||"",e.daily_copies||"",e.last_year_copies||"",e.growth_pct?`${e.growth_pct}%`:"",e.monthly_revenue||"",e.outstanding||"",e.staff_vacancy||"",e.q1_problems||"",e.q2_circulation_reason||"",e.q3_recovery_barrier||"",e.q4_ad_revenue||"",e.q5_ho_help||"",e.team_observation||""], [5,6,7,8,9], tb)
+    ));
   });
-  XLSX.utils.book_append_sheet(wb, makeSheet(bhHeaders, bhData, [18,13,16,22,14,13,13,12,16,16,12,32,32,28,28,26,28]), "Branch Head");
 
-  // ── 3. Circulation ──
-  const circHeaders = ["Branch Name","Date","Visited By","Incharge Name","Mobile","Designation","Decline Area","Decline Reason","Q3. Competitor Strong Area","Q4. Growth Potential","Q5. 90-Day Growth"];
-  const circData = [];
-  rows.forEach(r => {
-    (r._circArr.length ? r._circArr : [{}]).forEach(e => {
-      circData.push([r.branch, r.date, r.visitedBy, e.name||"", e.mobile||"", e.designation||"", e.decline_area||"", e.decline_reason||"", e.q3_competitor_strong||"", e.q4_growth_potential||"", e.q5_90_day_growth||""]);
-    });
+  // ── Circulation Sheet ──────────────────────────────────────────────────
+  const circCols = [
+    {h:"Branch Name",w:18,color:SEG.CIRC},{h:"Date",w:13,color:SEG.CIRC},{h:"Visited By",w:16,color:SEG.CIRC},
+    {h:"Incharge Name",w:24,color:SEG.CIRC},{h:"Mobile",w:14,color:SEG.CIRC},{h:"Designation",w:18,color:SEG.CIRC},
+    {h:"Decline Area",w:20,color:SEG.CIRC},{h:"Decline Reason",w:28,color:SEG.CIRC},
+    {h:"Q3. Competitor Strong",w:28,color:SEG.CIRC},{h:"Q4. Growth Potential",w:26,color:SEG.CIRC},
+    {h:"Q5. 90-Day Growth",w:24,color:SEG.CIRC},
+  ];
+  addSheet("Circulation", circCols, (ws, tb) => {
+    rows.forEach(r => (r._circArr.length ? r._circArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.mobile||"",e.designation||"",e.decline_area||"",e.decline_reason||"",e.q3_competitor_strong||"",e.q4_growth_potential||"",e.q5_90_day_growth||""], [], tb)
+    ));
   });
-  XLSX.utils.book_append_sheet(wb, makeSheet(circHeaders, circData, [18,13,16,24,14,18,20,28,28,26,26]), "Circulation");
 
-  // ── 4. Agent ──
-  const agentHeaders = ["Branch Name","Date","Visited By","Agent Name","Mobile","Agency","Area","Current Copies","LY Copies","Outstanding (₹)","Payment Regularity","Q1. Biggest Problem","Q2. Competitor Offer","Q3. 3-Month Growth","Q4. Help Required","Q5. Market Growth","Commitment (Copies)","Timeline"];
-  const agentData = [];
-  rows.forEach(r => {
-    (r._agentArr.length ? r._agentArr : [{}]).forEach(e => {
-      agentData.push([r.branch, r.date, r.visitedBy, e.agent_name||"", e.mobile||"", e.agency||"", e.area||"", e.current_copies||"", e.last_year_copies||"", e.outstanding||"", e.payment_regularity||"", e.q1_problem||"", e.q2_competitor_offer||"", e.q3_3month_growth||"", e.q4_company_help||"", e.q5_market_growth||"", e.additional_copies||"", e.timeline||""]);
-    });
+  // ── Agent Sheet ────────────────────────────────────────────────────────
+  const agentCols = [
+    {h:"Branch Name",w:18,color:SEG.AGENT},{h:"Date",w:13,color:SEG.AGENT},{h:"Visited By",w:16,color:SEG.AGENT},
+    {h:"Agent Name",w:22,color:SEG.AGENT},{h:"Mobile",w:14,color:SEG.AGENT},{h:"Agency",w:18,color:SEG.AGENT},
+    {h:"Area",w:16,color:SEG.AGENT},{h:"Current Copies",w:14,color:SEG.AGENT},{h:"LY Copies",w:13,color:SEG.AGENT},
+    {h:"Outstanding (₹)",w:16,color:SEG.AGENT},{h:"Payment Regularity",w:18,color:SEG.AGENT},
+    {h:"Q1. Biggest Problem",w:28,color:SEG.AGENT},{h:"Q2. Competitor Offer",w:26,color:SEG.AGENT},
+    {h:"Q3. 3-Month Growth",w:22,color:SEG.AGENT},{h:"Q4. Help Required",w:24,color:SEG.AGENT},
+    {h:"Q5. Market Growth",w:24,color:SEG.AGENT},{h:"Commitment (Copies)",w:18,color:SEG.AGENT},{h:"Timeline",w:16,color:SEG.AGENT},
+  ];
+  addSheet("Agent", agentCols, (ws, tb) => {
+    rows.forEach(r => (r._agentArr.length ? r._agentArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.agent_name||"",e.mobile||"",e.agency||"",e.area||"",e.current_copies||"",e.last_year_copies||"",e.outstanding||"",e.payment_regularity||"",e.q1_problem||"",e.q2_competitor_offer||"",e.q3_3month_growth||"",e.q4_company_help||"",e.q5_market_growth||"",e.additional_copies||"",e.timeline||""], [7,8,9,16], tb)
+    ));
   });
-  XLSX.utils.book_append_sheet(wb, makeSheet(agentHeaders, agentData, [18,13,16,22,14,18,16,13,13,16,18,28,26,22,24,24,16,14]), "Agent");
 
-  // ── 5. Hawker ──
-  const hawkerHeaders = ["Branch Name","Date","Visited By","Hawker Name","Mobile","Area","Q1. Top Selling Newspaper","Q2. Reader Complaints","Q3. Competitor Scheme","Q4. Demand Growth Area","Q5. Delivery Problems","Team Remarks"];
-  const hawkerData = [];
-  rows.forEach(r => {
-    (r._hawkerArr.length ? r._hawkerArr : [{}]).forEach(e => {
-      hawkerData.push([r.branch, r.date, r.visitedBy, e.hawker_name||"", e.mobile||"", e.area||"", e.q1_top_newspaper||"", e.q2_reader_complaint||"", e.q3_competitor_scheme||"", e.q4_demand_area||"", e.q5_delivery_problem||"", e.team_remarks||""]);
-    });
+  // ── Hawker Sheet ───────────────────────────────────────────────────────
+  const hawkerCols = [
+    {h:"Branch Name",w:18,color:SEG.HAWKER},{h:"Date",w:13,color:SEG.HAWKER},{h:"Visited By",w:16,color:SEG.HAWKER},
+    {h:"Hawker Name",w:22,color:SEG.HAWKER},{h:"Mobile",w:14,color:SEG.HAWKER},{h:"Area",w:16,color:SEG.HAWKER},
+    {h:"Q1. Top Selling Newspaper",w:26,color:SEG.HAWKER},{h:"Q2. Reader Complaints",w:28,color:SEG.HAWKER},
+    {h:"Q3. Competitor Scheme",w:26,color:SEG.HAWKER},{h:"Q4. Demand Growth Area",w:26,color:SEG.HAWKER},
+    {h:"Q5. Delivery Problems",w:26,color:SEG.HAWKER},{h:"Team Remarks",w:28,color:SEG.HAWKER},
+  ];
+  addSheet("Hawker", hawkerCols, (ws, tb) => {
+    rows.forEach(r => (r._hawkerArr.length ? r._hawkerArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.hawker_name||"",e.mobile||"",e.area||"",e.q1_top_newspaper||"",e.q2_reader_complaint||"",e.q3_competitor_scheme||"",e.q4_demand_area||"",e.q5_delivery_problem||"",e.team_remarks||""], [], tb)
+    ));
   });
-  XLSX.utils.book_append_sheet(wb, makeSheet(hawkerHeaders, hawkerData, [18,13,16,22,14,16,26,28,26,26,26,28]), "Hawker");
 
-  // ── 6. Correspondent ──
-  const corrHeaders = ["Branch Name","Date","Visited By","Correspondent Name","Mobile","Area","Q1. Reader Sentiment","Q2. Weak Areas","Q3. Competitor Strong","Q4. Content Feedback","Q5. Growth Scope","Observation"];
-  const corrData = [];
-  rows.forEach(r => {
-    (r._corrArr.length ? r._corrArr : [{}]).forEach(e => {
-      corrData.push([r.branch, r.date, r.visitedBy, e.name||"", e.mobile||"", e.area||"", e.q1_reader_sentiment||"", e.q2_weak_areas||"", e.q3_competitor_strong||"", e.q4_content_feedback||"", e.q5_growth_scope||"", e.observation||""]);
-    });
+  // ── Correspondent Sheet ────────────────────────────────────────────────
+  const corrCols = [
+    {h:"Branch Name",w:18,color:SEG.CORR},{h:"Date",w:13,color:SEG.CORR},{h:"Visited By",w:16,color:SEG.CORR},
+    {h:"Name",w:24,color:SEG.CORR},{h:"Mobile",w:14,color:SEG.CORR},{h:"Area",w:16,color:SEG.CORR},
+    {h:"Q1. Reader Sentiment",w:28,color:SEG.CORR},{h:"Q2. Weak Areas",w:26,color:SEG.CORR},
+    {h:"Q3. Competitor Strong",w:26,color:SEG.CORR},{h:"Q4. Content Feedback",w:28,color:SEG.CORR},
+    {h:"Q5. Growth Scope",w:26,color:SEG.CORR},{h:"Observation",w:28,color:SEG.CORR},
+  ];
+  addSheet("Correspondent", corrCols, (ws, tb) => {
+    rows.forEach(r => (r._corrArr.length ? r._corrArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.mobile||"",e.area||"",e.q1_reader_sentiment||"",e.q2_weak_areas||"",e.q3_competitor_strong||"",e.q4_content_feedback||"",e.q5_growth_scope||"",e.observation||""], [], tb)
+    ));
   });
-  XLSX.utils.book_append_sheet(wb, makeSheet(corrHeaders, corrData, [18,13,16,24,14,16,28,26,26,28,26,28]), "Correspondent");
 
-  // ── 7. Advertisement ──
-  const advHeaders = ["Branch Name","Date","Visited By","Member Name","Designation","Ad Target (₹)","Achievement (₹)","Achievement %","Q3. Why Clients Lost","Q4. Top Opportunity","Q5. 6-Month Potential"];
-  const advData = [];
-  rows.forEach(r => {
-    (r._advArr.length ? r._advArr : [{}]).forEach(e => {
+  // ── Advertisement Sheet ────────────────────────────────────────────────
+  const advCols = [
+    {h:"Branch Name",w:18,color:SEG.ADV},{h:"Date",w:13,color:SEG.ADV},{h:"Visited By",w:16,color:SEG.ADV},
+    {h:"Member Name",w:22,color:SEG.ADV},{h:"Designation",w:18,color:SEG.ADV},
+    {h:"Ad Target (₹)",w:16,color:SEG.ADV},{h:"Achievement (₹)",w:16,color:SEG.ADV},{h:"Achievement %",w:14,color:SEG.ADV},
+    {h:"Q3. Why Clients Lost",w:28,color:SEG.ADV},{h:"Q4. Top Opportunity",w:26,color:SEG.ADV},{h:"Q5. 6-Month Potential",w:26,color:SEG.ADV},
+  ];
+  addSheet("Advertisement", advCols, (ws, tb) => {
+    rows.forEach(r => (r._advArr.length ? r._advArr : [{}]).forEach(e => {
       const pct = e.target && e.achievement ? `${((Number(e.achievement)/Number(e.target))*100).toFixed(1)}%` : "";
-      advData.push([r.branch, r.date, r.visitedBy, e.name||"", e.designation||"", e.target||"", e.achievement||"", pct, e.q3_why_lost||"", e.q4_top_opportunity||"", e.q5_6month_potential||""]);
-    });
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.designation||"",e.target||"",e.achievement||"",pct,e.q3_why_lost||"",e.q4_top_opportunity||"",e.q5_6month_potential||""], [5,6,7], tb);
+    }));
   });
-  XLSX.utils.book_append_sheet(wb, makeSheet(advHeaders, advData, [18,13,16,22,18,16,16,14,28,26,26]), "Advertisement");
 
-  // ── 8. Ad Agency ──
-  const agencyHeaders = ["Branch Name","Date","Visited By","Agency Name","Contact Person","Q1. Market Reputation","Q2. Advertiser Complaints","Q3. Competitor Strength","Q4. Sector Potential","Q5. Improvements"];
-  const agencyData = [];
-  rows.forEach(r => {
-    (r._advArr.length ? r._advArr : [{}]).forEach(e => {
-      agencyData.push([r.branch, r.date, r.visitedBy, e.agency_name||"", e.contact_person||"", e.q1_market_reputation||"", e.q2_advertiser_complaint||"", e.q3_competitor_strength||"", e.q4_sector_potential||"", e.q5_improvement||""]);
-    });
+  // ── Ad Agency Sheet ────────────────────────────────────────────────────
+  const agencyCols = [
+    {h:"Branch Name",w:18,color:SEG.AGENCY},{h:"Date",w:13,color:SEG.AGENCY},{h:"Visited By",w:16,color:SEG.AGENCY},
+    {h:"Agency Name",w:24,color:SEG.AGENCY},{h:"Contact Person",w:20,color:SEG.AGENCY},
+    {h:"Q1. Market Reputation",w:28,color:SEG.AGENCY},{h:"Q2. Advertiser Complaints",w:28,color:SEG.AGENCY},
+    {h:"Q3. Competitor Strength",w:26,color:SEG.AGENCY},{h:"Q4. Sector Potential",w:26,color:SEG.AGENCY},{h:"Q5. Improvements",w:26,color:SEG.AGENCY},
+  ];
+  addSheet("Ad Agency", agencyCols, (ws, tb) => {
+    rows.forEach(r => (r._agencyArr.length ? r._agencyArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.agency_name||"",e.contact_person||"",e.q1_market_reputation||"",e.q2_advertiser_complaint||"",e.q3_competitor_strength||"",e.q4_sector_potential||"",e.q5_improvement||""], [], tb)
+    ));
   });
-  XLSX.utils.book_append_sheet(wb, makeSheet(agencyHeaders, agencyData, [18,13,16,24,20,28,28,26,26,26]), "Ad Agency");
 
-  // ── 9. Recovery ──
-  const recHeaders = ["Branch Name","Date","Visited By","Party Name","Outstanding (₹)","Ageing (Days)","Reason","Recovery Plan","Expected Date"];
-  const recData = [];
-  rows.forEach(r => {
-    (r._allParties.length ? r._allParties : [{}]).forEach(p => {
-      recData.push([r.branch, r.date, r.visitedBy, p.party||"", p.outstanding||"", p.ageing||"", p.reason||"", p.recovery_plan||"", p.expected_date||""]);
-    });
+  // ── Recovery Sheet ─────────────────────────────────────────────────────
+  const recCols = [
+    {h:"Branch Name",w:18,color:SEG.RECOVERY},{h:"Date",w:13,color:SEG.RECOVERY},{h:"Visited By",w:16,color:SEG.RECOVERY},
+    {h:"Party Name",w:24,color:SEG.RECOVERY},{h:"Outstanding (₹)",w:18,color:SEG.RECOVERY},
+    {h:"Ageing (Days)",w:14,color:SEG.RECOVERY},{h:"Reason",w:26,color:SEG.RECOVERY},
+    {h:"Recovery Plan",w:26,color:SEG.RECOVERY},{h:"Expected Date",w:16,color:SEG.RECOVERY},
+  ];
+  addSheet("Recovery", recCols, (ws, tb) => {
+    rows.forEach(r => (r._allParties.length ? r._allParties : [{}]).forEach(p =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,p.party||"",p.outstanding||"",p.ageing||"",p.reason||"",p.recovery_plan||"",p.expected_date||""], [4,5], tb)
+    ));
   });
-  XLSX.utils.book_append_sheet(wb, makeSheet(recHeaders, recData, [18,13,16,24,16,14,26,26,16]), "Recovery");
 
   // Download
-  XLSX.writeFile(wb, `Patrika-Visit-Matrix-${new Date().toISOString().slice(0,10)}.xlsx`);
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Patrika-Visit-Matrix-${new Date().toISOString().slice(0,10)}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-// ── Visit Card UI ─────────────────────────────────────────────────────────────
-function VisitCard({ row }) {
+// ── Visit Card UI ──────────────────────────────────────────────────────────
+function VisitCard({ row, isAdmin }) {
   const growthColor = row.growth === null ? "" : row.growth < 0 ? "text-red-600" : "text-emerald-700";
   const Section = ({ title, children }) => (
     <div className="border-t border-border">
@@ -213,7 +316,7 @@ function VisitCard({ row }) {
           <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Branch Visit</div>
           <h3 className="text-xl font-bold">{row.branch}</h3>
         </div>
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
           <div className="text-right">
             <div className="text-[10px] opacity-60 uppercase tracking-wider">Date</div>
             <div className="text-sm font-mono font-semibold">{row.date}</div>
@@ -222,6 +325,11 @@ function VisitCard({ row }) {
             <div className="text-[10px] opacity-60 uppercase tracking-wider">Visited By</div>
             <div className="text-sm font-semibold">{row.visitedBy}</div>
           </div>
+          {isAdmin && (
+            <Link to={`/visits/${row.id}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70 border border-secondary-foreground/30 px-3 py-1.5 bg-primary text-primary-foreground">
+              Edit <ExternalLink className="w-3 h-3" />
+            </Link>
+          )}
           <Link to={`/visits/${row.id}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70 border border-secondary-foreground/30 px-3 py-1.5">
             Open <ExternalLink className="w-3 h-3" />
           </Link>
@@ -240,7 +348,7 @@ function VisitCard({ row }) {
       </Section>
       <Section title="Circulation">
         <Field label="Incharge(s)" value={row.circNames} />
-        <Field label="Weak Agents" value={row.weakAgentsCount || "0"} accent={row.weakAgentsCount > 0 ? "text-red-600 font-bold" : ""} />
+        <Field label="Weak Agents" value={String(row.weakAgentsCount || 0)} accent={row.weakAgentsCount > 0 ? "text-red-600 font-bold" : ""} />
         <Field label="Weak Agent Names" value={row.weakAgentsList} />
       </Section>
       <Section title="Agent">
@@ -276,15 +384,25 @@ function VisitCard({ row }) {
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Main ───────────────────────────────────────────────────────────────────
 export default function VisitMatrix() {
   const [visits, setVisits] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
   const [filterBranch, setFilterBranch] = useState("");
   const [filterUser, setFilterUser] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+
+  // Get isAdmin from auth
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem("user") || "{}");
+      setIsAdmin(u.role === "admin");
+    } catch {}
+  }, []);
 
   useEffect(() => {
     api.get("/visits").then(({ data }) => setVisits(data)).catch(() => {}).finally(() => setLoading(false));
@@ -301,6 +419,13 @@ export default function VisitMatrix() {
 
   const hasFilters = filterBranch || filterUser || filterDateFrom || filterDateTo;
   const clearFilters = () => { setFilterBranch(""); setFilterUser(""); setFilterDateFrom(""); setFilterDateTo(""); };
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try { await downloadExcel(filtered); }
+    catch (e) { console.error(e); alert("Download failed: " + e.message); }
+    finally { setDownloading(false); }
+  };
 
   if (loading) return (
     <div className="min-h-screen bg-background"><AppHeader />
@@ -325,8 +450,9 @@ export default function VisitMatrix() {
               <Filter className="w-4 h-4 mr-2" />
               Filters {hasFilters && <span className="ml-1.5 bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 rounded-full">ON</span>}
             </Button>
-            <Button onClick={() => downloadExcel(filtered)} className="rounded-none h-10 bg-emerald-700 hover:bg-emerald-800">
-              <Download className="w-4 h-4 mr-2" /> Download Excel
+            <Button onClick={handleDownload} disabled={downloading} className="rounded-none h-10 bg-emerald-700 hover:bg-emerald-800">
+              {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              {downloading ? "Preparing..." : "Download Excel"}
             </Button>
           </div>
         </div>
@@ -363,7 +489,9 @@ export default function VisitMatrix() {
             <p className="text-sm text-muted-foreground">{hasFilters ? "No visits match filters." : "No visits yet."}</p>
           </div>
         ) : (
-          <div className="space-y-6">{filtered.map(row => <VisitCard key={row.id} row={row} />)}</div>
+          <div className="space-y-6">
+            {filtered.map(row => <VisitCard key={row.id} row={row} isAdmin={isAdmin} />)}
+          </div>
         )}
       </main>
     </div>
