@@ -57,6 +57,7 @@ function MultiEntrySegment({ segKey, schema, data, onChange, readOnly = false })
         <span className="text-xs text-muted-foreground">
           {entries.length} {entryLabel.toLowerCase()}{entries.length !== 1 ? "s" : ""} captured
         </span>
+        {!readOnly && (
         <Button
           onClick={addEntry}
           className="rounded-none bg-primary hover:bg-primary/90 h-10"
@@ -95,6 +96,7 @@ function MultiEntrySegment({ segKey, schema, data, onChange, readOnly = false })
                     ? <ChevronDown className="w-4 h-4" />
                     : <ChevronUp className="w-4 h-4" />}
                 </button>
+                {!readOnly && (
                 <button
                   onClick={() => removeEntry(idx)}
                   className="p-1.5 hover:bg-primary/20 rounded text-primary-foreground hover:text-primary"
@@ -322,6 +324,7 @@ export default function VisitDetail() {
                     schema={merged}
                     data={Array.isArray(segData) ? segData : []}
                     onChange={(d) => updateSegmentLocal(s.key, d)}
+                    readOnly={!isAdmin && visit.created_by !== visit.current_user_id}
                   />
                 ) : (
                   /* Summary — single form */
