@@ -1,384 +1,499 @@
-import { useEffect, useState, useCallback } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
-import { api, SEGMENTS } from "../lib/api";
-import { SCHEMAS, mergeSchema } from "../lib/schemas";
-import { useAuth } from "../lib/auth";
+import { useEffect, useState, useMemo } from "react";
+import { Link } from "react-router-dom";
+import { api } from "../lib/api";
 import AppHeader from "../components/AppHeader";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
+import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
-import { Textarea } from "../components/ui/textarea";
-import { Label } from "../components/ui/label";
-import { SegmentForm } from "../components/FormPrimitives";
-import AIInsightPanel, { renderMd } from "../components/AIInsightPanel";
-import Dashboard from "../components/Dashboard";
-import QuestionEditor from "../components/QuestionEditor";
-import { ArrowLeft, Save, Loader2, FileText, Sparkles, Printer, BarChart3, ScrollText, Settings2, Plus, Trash2, ChevronUp, ChevronDown } from "lucide-react";
-import { toast } from "sonner";
+import { ExternalLink, Loader2, Download, Filter, X } from "lucide-react";
 
-// ── Multi-entry card component ─────────────────────────────────────────────
-function MultiEntrySegment({ segKey, schema, data, onChange, readOnly = false }) {
-  const entries = Array.isArray(data) ? data : [];
-  const [collapsed, setCollapsed] = useState({});
+const fmtINR = (n) => {
+  const v = Number(n) || 0;
+  if (!v) return "";
+  if (v >= 10000000) return "₹" + (v / 10000000).toFixed(2) + " Cr";
+  if (v >= 100000) return "₹" + (v / 100000).toFixed(2) + " L";
+  if (v >= 1000) return "₹" + (v / 1000).toFixed(1) + "K";
+  return "₹" + v.toLocaleString("en-IN");
+};
 
-  const entryLabel = schema.entryLabel || "Entry";
+const arrOf = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+const names = (val, key) => arrOf(val).map(e => e[key] || e.name || "").filter(Boolean).join(", ") || "";
 
-  // Get a display name for each entry from first text field
-  const getEntryName = (entry) => {
-    const firstTextField = schema.sections
-      .flatMap(s => s.fields || [])
-      .find(f => f.kind !== "number" && f.kind !== "textarea");
-    if (firstTextField && entry[firstTextField.key]) return entry[firstTextField.key];
-    return `${entryLabel} ${entries.indexOf(entry) + 1}`;
+function buildRow(v) {
+  const seg = v.segments || {};
+  const bhArr = arrOf(seg.branch_head);
+  const circArr = arrOf(seg.circulation);
+  const agentArr = arrOf(seg.agent);
+  const hawkerArr = arrOf(seg.hawker);
+  const corrArr = arrOf(seg.correspondent);
+  const advArr = arrOf(seg.advertisement);
+  const agencyArr = arrOf(seg.ad_agency);
+  const recoveryArr = arrOf(seg.recovery);
+  const totalDaily = bhArr.reduce((s, e) => s + (Number(e.daily_copies) || 0), 0);
+  const totalLY = bhArr.reduce((s, e) => s + (Number(e.last_year_copies) || 0), 0);
+  const totalRev = bhArr.reduce((s, e) => s + (Number(e.monthly_revenue) || 0), 0);
+  const totalBhOut = bhArr.reduce((s, e) => s + (Number(e.outstanding) || 0), 0);
+  const growthVals = bhArr.map(e => Number(e.growth_pct)).filter(Boolean);
+  const avgGrowth = growthVals.length ? (growthVals.reduce((a, b) => a + b, 0) / growthVals.length) : null;
+  const weakAgents = circArr.flatMap(e => (e.weak_agents || []).filter(r => r.agent_name));
+  const totalAgentOut = agentArr.reduce((s, e) => s + (Number(e.outstanding) || 0), 0);
+  const totalTarget = advArr.reduce((s, e) => s + (Number(e.target) || 0), 0);
+  const totalAchiev = advArr.reduce((s, e) => s + (Number(e.achievement) || 0), 0);
+  const lostClients = advArr.flatMap(e => (e.lost_clients || []).filter(r => r.client));
+  const allParties = recoveryArr.flatMap(e => (e.parties || []));
+  const totalRecovery = allParties.reduce((s, p) => s + (Number(p.outstanding) || 0), 0);
+  return {
+    id: v.id, branch: v.branch_name, date: v.visit_date, visitedBy: v.created_by_name || "",
+    bhNames: names(seg.branch_head, "name"),
+    bhDesig: bhArr.map(e => e.designation || "").filter(Boolean).join(", "),
+    bhMobile: bhArr.map(e => e.mobile || "").filter(Boolean).join(", "),
+    dailyCopies: totalDaily || null, lyCopies: totalLY || null, growth: avgGrowth,
+    revenue: totalRev || null, bhOutstanding: totalBhOut || null,
+    staffVacancy: bhArr.map(e => e.staff_vacancy || "").filter(Boolean).join(", "),
+    circNames: names(seg.circulation, "name"),
+    weakAgentsCount: weakAgents.length || null,
+    weakAgentsList: weakAgents.map(a => a.agent_name).join(", "),
+    agentNames: names(seg.agent, "agent_name"), agentCount: agentArr.length || null,
+    agentOutstanding: totalAgentOut || null,
+    hawkerNames: names(seg.hawker, "hawker_name"), hawkerCount: hawkerArr.length || null,
+    corrNames: names(seg.correspondent, "name"), corrCount: corrArr.length || null,
+    advNames: names(seg.advertisement, "name"),
+    adTarget: totalTarget || null, adAchiev: totalAchiev || null,
+    adPct: totalTarget ? Number(((totalAchiev / totalTarget) * 100).toFixed(1)) : null,
+    lostClientsCount: lostClients.length || null,
+    lostClientsList: lostClients.map(c => c.client).join(", "),
+    agencyNames: names(seg.ad_agency, "agency_name"), agencyCount: agencyArr.length || null,
+    recoveryParties: allParties.length || null, totalRecovery: totalRecovery || null,
+    _bhArr: bhArr, _circArr: circArr, _agentArr: agentArr, _hawkerArr: hawkerArr,
+    _corrArr: corrArr, _advArr: advArr, _agencyArr: agencyArr,
+    _weakAgents: weakAgents, _lostClients: lostClients, _allParties: allParties,
+  };
+}
+
+// ── Excel Download ─────────────────────────────────────────────────────────
+async function downloadExcel(rows) {
+  const ExcelJS = (await import("exceljs/dist/exceljs.min.js")).default;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Patrika Director Office";
+
+  // Colors
+  const BLUE_BORDER = { style: "medium", color: { argb: "FF1D6FA8" } };
+  const bdr = { top: BLUE_BORDER, left: BLUE_BORDER, bottom: BLUE_BORDER, right: BLUE_BORDER };
+  const thinBdr = { top: { style: "thin", color: { argb: "FF1D6FA8" } }, left: { style: "thin", color: { argb: "FF1D6FA8" } }, bottom: { style: "thin", color: { argb: "FF1D6FA8" } }, right: { style: "thin", color: { argb: "FF1D6FA8" } } };
+
+  const SEG = {
+    BH:       "FFB91C1C",
+    CIRC:     "FF166534",
+    AGENT:    "FF92400E",
+    HAWKER:   "FF1E3A5F",
+    CORR:     "FF4A1D96",
+    ADV:      "FF7C2D12",
+    AGENCY:   "FF134E4A",
+    RECOVERY: "FF312E81",
+    SUMMARY:  "FF1F3864",
   };
 
-  const addEntry = () => {
-    onChange([...entries, {}]);
-    // auto-expand the new entry
-    setCollapsed(c => ({ ...c, [entries.length]: false }));
+  // Helper: add a sheet with header row + data rows
+  const addSheet = (name, colDefs, dataFn) => {
+    const ws = wb.addWorksheet(name, {
+      views: [{ showGridLines: false, state: "frozen", ySplit: 1 }],
+    });
+    ws.columns = colDefs.map(c => ({ width: c.w }));
+
+    // Header row
+    const hRow = ws.addRow(colDefs.map(c => c.h));
+    hRow.height = 26;
+    hRow.eachCell((cell, i) => {
+      cell.font = { bold: true, name: "Arial", size: 9, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colDefs[i-1].color || SEG.SUMMARY } };
+      cell.alignment = { horizontal: "center", vertical: "middle", wrapText: false };
+      cell.border = bdr;
+    });
+
+    // Data rows
+    dataFn(ws, thinBdr);
+    return ws;
   };
 
-  const removeEntry = (idx) => {
-    onChange(entries.filter((_, i) => i !== idx));
+  const addDataRow = (ws, vals, numCols, thinBdr) => {
+    const row = ws.addRow(vals);
+    row.height = 18;
+    row.eachCell((cell, i) => {
+      const isNum = numCols && numCols.includes(i - 1);
+      cell.font = { name: "Arial", size: 9 };
+      cell.alignment = { horizontal: isNum ? "center" : "left", vertical: "middle" };
+      cell.border = thinBdr;
+    });
+    return row;
   };
 
-  const updateEntry = (idx, entryData) => {
-    onChange(entries.map((e, i) => (i === idx ? entryData : e)));
+  // ── Summary Sheet ──────────────────────────────────────────────────────
+  const wsSummary = wb.addWorksheet("Summary", { views: [{ showGridLines: false }] });
+  wsSummary.columns = [{ width: 36 }, { width: 22 }];
+
+  const addSum = (label, value, bgArgb) => {
+    const row = wsSummary.addRow([label, value]);
+    row.height = 20;
+    row.eachCell((cell, i) => {
+      cell.font = { bold: !!bgArgb, name: "Arial", size: 10, color: { argb: bgArgb ? "FFFFFFFF" : "FF111827" } };
+      cell.border = thinBdr;
+      cell.alignment = { horizontal: i === 2 ? "center" : "left", vertical: "middle" };
+      if (bgArgb) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bgArgb } };
+    });
   };
 
-  const toggleCollapse = (idx) => {
-    setCollapsed(c => ({ ...c, [idx]: !c[idx] }));
-  };
+  const tRow = wsSummary.addRow(["PATRIKA DIRECTOR OFFICE — VISIT MATRIX", ""]);
+  wsSummary.mergeCells("A1:B1");
+  const tc = tRow.getCell(1); tc.value = "PATRIKA DIRECTOR OFFICE — VISIT MATRIX";
+  tc.font = { bold: true, size: 13, color: { argb: "FFFFFFFF" }, name: "Arial" };
+  tc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: SEG.SUMMARY } };
+  tc.alignment = { horizontal: "center", vertical: "middle" };
+  tc.border = bdr;
+  tRow.height = 32;
 
-  return (
+  wsSummary.addRow([]);
+  addSum("Generated On", new Date().toLocaleDateString("en-IN"));
+  addSum("Total Visits", rows.length);
+  addSum("Total Branches", new Set(rows.map(r => r.branch)).size);
+  wsSummary.addRow([]);
+  addSum("METRIC", "TOTAL", SEG.BH);
+  addSum("Total Daily Copies", rows.reduce((s,r)=>s+(r.dailyCopies||0),0));
+  addSum("Total LY Copies", rows.reduce((s,r)=>s+(r.lyCopies||0),0));
+  addSum("Total Revenue (₹)", rows.reduce((s,r)=>s+(r.revenue||0),0));
+  addSum("Total BH Outstanding (₹)", rows.reduce((s,r)=>s+(r.bhOutstanding||0),0));
+  addSum("Total Ad Target (₹)", rows.reduce((s,r)=>s+(r.adTarget||0),0));
+  addSum("Total Ad Achievement (₹)", rows.reduce((s,r)=>s+(r.adAchiev||0),0));
+  addSum("Total Agent Outstanding (₹)", rows.reduce((s,r)=>s+(r.agentOutstanding||0),0));
+  addSum("Total Recovery Outstanding (₹)", rows.reduce((s,r)=>s+(r.totalRecovery||0),0));
+  addSum("Total Weak Agents", rows.reduce((s,r)=>s+(r.weakAgentsCount||0),0));
+  addSum("Total Lost Clients", rows.reduce((s,r)=>s+(r.lostClientsCount||0),0));
+
+  // ── Branch Head Sheet ──────────────────────────────────────────────────
+  const bhCols = [
+    {h:"Branch Name",w:18,color:SEG.BH},{h:"Date",w:13,color:SEG.BH},{h:"Visited By",w:16,color:SEG.BH},
+    {h:"BH Name",w:22,color:SEG.BH},{h:"Mobile",w:14,color:SEG.BH},{h:"Current Copies",w:14,color:SEG.BH},
+    {h:"LY Copies",w:13,color:SEG.BH},{h:"Growth %",w:12,color:SEG.BH},{h:"Revenue (₹)",w:16,color:SEG.BH},
+    {h:"Outstanding (₹)",w:16,color:SEG.BH},{h:"Staff Vacancy",w:12,color:SEG.BH},
+    {h:"Q1. 3 Biggest Problems",w:32,color:SEG.BH},{h:"Q2. Circulation Reason",w:30,color:SEG.BH},
+    {h:"Q3. Recovery Barrier",w:28,color:SEG.BH},{h:"Q4. Ad Revenue Suggestion",w:28,color:SEG.BH},
+    {h:"Q5. HO Support",w:26,color:SEG.BH},{h:"Team Observation",w:28,color:SEG.BH},
+  ];
+  addSheet("Branch Head", bhCols, (ws, tb) => {
+    rows.forEach(r => (r._bhArr.length ? r._bhArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.mobile||"",e.daily_copies||"",e.last_year_copies||"",e.growth_pct?`${e.growth_pct}%`:"",e.monthly_revenue||"",e.outstanding||"",e.staff_vacancy||"",e.q1_problems||"",e.q2_circulation_reason||"",e.q3_recovery_barrier||"",e.q4_ad_revenue||"",e.q5_ho_help||"",e.team_observation||""], [5,6,7,8,9], tb)
+    ));
+  });
+
+  // ── Circulation Sheet ──────────────────────────────────────────────────
+  const circCols = [
+    {h:"Branch Name",w:18,color:SEG.CIRC},{h:"Date",w:13,color:SEG.CIRC},{h:"Visited By",w:16,color:SEG.CIRC},
+    {h:"Incharge Name",w:24,color:SEG.CIRC},{h:"Mobile",w:14,color:SEG.CIRC},{h:"Designation",w:18,color:SEG.CIRC},
+    {h:"Decline Area",w:20,color:SEG.CIRC},{h:"Decline Reason",w:28,color:SEG.CIRC},
+    {h:"Q3. Competitor Strong",w:28,color:SEG.CIRC},{h:"Q4. Growth Potential",w:26,color:SEG.CIRC},
+    {h:"Q5. 90-Day Growth",w:24,color:SEG.CIRC},
+  ];
+  addSheet("Circulation", circCols, (ws, tb) => {
+    rows.forEach(r => (r._circArr.length ? r._circArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.mobile||"",e.designation||"",e.decline_area||"",e.decline_reason||"",e.q3_competitor_strong||"",e.q4_growth_potential||"",e.q5_90_day_growth||""], [], tb)
+    ));
+  });
+
+  // ── Agent Sheet ────────────────────────────────────────────────────────
+  const agentCols = [
+    {h:"Branch Name",w:18,color:SEG.AGENT},{h:"Date",w:13,color:SEG.AGENT},{h:"Visited By",w:16,color:SEG.AGENT},
+    {h:"Agent Name",w:22,color:SEG.AGENT},{h:"Mobile",w:14,color:SEG.AGENT},{h:"Agency",w:18,color:SEG.AGENT},
+    {h:"Area",w:16,color:SEG.AGENT},{h:"Current Copies",w:14,color:SEG.AGENT},{h:"LY Copies",w:13,color:SEG.AGENT},
+    {h:"Outstanding (₹)",w:16,color:SEG.AGENT},{h:"Payment Regularity",w:18,color:SEG.AGENT},
+    {h:"Q1. Biggest Problem",w:28,color:SEG.AGENT},{h:"Q2. Competitor Offer",w:26,color:SEG.AGENT},
+    {h:"Q3. 3-Month Growth",w:22,color:SEG.AGENT},{h:"Q4. Help Required",w:24,color:SEG.AGENT},
+    {h:"Q5. Market Growth",w:24,color:SEG.AGENT},{h:"Commitment (Copies)",w:18,color:SEG.AGENT},{h:"Timeline",w:16,color:SEG.AGENT},
+  ];
+  addSheet("Agent", agentCols, (ws, tb) => {
+    rows.forEach(r => (r._agentArr.length ? r._agentArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.agent_name||"",e.mobile||"",e.agency||"",e.area||"",e.current_copies||"",e.last_year_copies||"",e.outstanding||"",e.payment_regularity||"",e.q1_problem||"",e.q2_competitor_offer||"",e.q3_3month_growth||"",e.q4_company_help||"",e.q5_market_growth||"",e.additional_copies||"",e.timeline||""], [7,8,9,16], tb)
+    ));
+  });
+
+  // ── Hawker Sheet ───────────────────────────────────────────────────────
+  const hawkerCols = [
+    {h:"Branch Name",w:18,color:SEG.HAWKER},{h:"Date",w:13,color:SEG.HAWKER},{h:"Visited By",w:16,color:SEG.HAWKER},
+    {h:"Hawker Name",w:22,color:SEG.HAWKER},{h:"Mobile",w:14,color:SEG.HAWKER},{h:"Area",w:16,color:SEG.HAWKER},
+    {h:"Q1. Top Selling Newspaper",w:26,color:SEG.HAWKER},{h:"Q2. Reader Complaints",w:28,color:SEG.HAWKER},
+    {h:"Q3. Competitor Scheme",w:26,color:SEG.HAWKER},{h:"Q4. Demand Growth Area",w:26,color:SEG.HAWKER},
+    {h:"Q5. Delivery Problems",w:26,color:SEG.HAWKER},{h:"Team Remarks",w:28,color:SEG.HAWKER},
+  ];
+  addSheet("Hawker", hawkerCols, (ws, tb) => {
+    rows.forEach(r => (r._hawkerArr.length ? r._hawkerArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.hawker_name||"",e.mobile||"",e.area||"",e.q1_top_newspaper||"",e.q2_reader_complaint||"",e.q3_competitor_scheme||"",e.q4_demand_area||"",e.q5_delivery_problem||"",e.team_remarks||""], [], tb)
+    ));
+  });
+
+  // ── Correspondent Sheet ────────────────────────────────────────────────
+  const corrCols = [
+    {h:"Branch Name",w:18,color:SEG.CORR},{h:"Date",w:13,color:SEG.CORR},{h:"Visited By",w:16,color:SEG.CORR},
+    {h:"Name",w:24,color:SEG.CORR},{h:"Mobile",w:14,color:SEG.CORR},{h:"Area",w:16,color:SEG.CORR},
+    {h:"Q1. Reader Sentiment",w:28,color:SEG.CORR},{h:"Q2. Weak Areas",w:26,color:SEG.CORR},
+    {h:"Q3. Competitor Strong",w:26,color:SEG.CORR},{h:"Q4. Content Feedback",w:28,color:SEG.CORR},
+    {h:"Q5. Growth Scope",w:26,color:SEG.CORR},{h:"Observation",w:28,color:SEG.CORR},
+  ];
+  addSheet("Correspondent", corrCols, (ws, tb) => {
+    rows.forEach(r => (r._corrArr.length ? r._corrArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.mobile||"",e.area||"",e.q1_reader_sentiment||"",e.q2_weak_areas||"",e.q3_competitor_strong||"",e.q4_content_feedback||"",e.q5_growth_scope||"",e.observation||""], [], tb)
+    ));
+  });
+
+  // ── Advertisement Sheet ────────────────────────────────────────────────
+  const advCols = [
+    {h:"Branch Name",w:18,color:SEG.ADV},{h:"Date",w:13,color:SEG.ADV},{h:"Visited By",w:16,color:SEG.ADV},
+    {h:"Member Name",w:22,color:SEG.ADV},{h:"Designation",w:18,color:SEG.ADV},
+    {h:"Ad Target (₹)",w:16,color:SEG.ADV},{h:"Achievement (₹)",w:16,color:SEG.ADV},{h:"Achievement %",w:14,color:SEG.ADV},
+    {h:"Q3. Why Clients Lost",w:28,color:SEG.ADV},{h:"Q4. Top Opportunity",w:26,color:SEG.ADV},{h:"Q5. 6-Month Potential",w:26,color:SEG.ADV},
+  ];
+  addSheet("Advertisement", advCols, (ws, tb) => {
+    rows.forEach(r => (r._advArr.length ? r._advArr : [{}]).forEach(e => {
+      const pct = e.target && e.achievement ? `${((Number(e.achievement)/Number(e.target))*100).toFixed(1)}%` : "";
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.designation||"",e.target||"",e.achievement||"",pct,e.q3_why_lost||"",e.q4_top_opportunity||"",e.q5_6month_potential||""], [5,6,7], tb);
+    }));
+  });
+
+  // ── Ad Agency Sheet ────────────────────────────────────────────────────
+  const agencyCols = [
+    {h:"Branch Name",w:18,color:SEG.AGENCY},{h:"Date",w:13,color:SEG.AGENCY},{h:"Visited By",w:16,color:SEG.AGENCY},
+    {h:"Agency Name",w:24,color:SEG.AGENCY},{h:"Contact Person",w:20,color:SEG.AGENCY},
+    {h:"Q1. Market Reputation",w:28,color:SEG.AGENCY},{h:"Q2. Advertiser Complaints",w:28,color:SEG.AGENCY},
+    {h:"Q3. Competitor Strength",w:26,color:SEG.AGENCY},{h:"Q4. Sector Potential",w:26,color:SEG.AGENCY},{h:"Q5. Improvements",w:26,color:SEG.AGENCY},
+  ];
+  addSheet("Ad Agency", agencyCols, (ws, tb) => {
+    rows.forEach(r => (r._agencyArr.length ? r._agencyArr : [{}]).forEach(e =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.agency_name||"",e.contact_person||"",e.q1_market_reputation||"",e.q2_advertiser_complaint||"",e.q3_competitor_strength||"",e.q4_sector_potential||"",e.q5_improvement||""], [], tb)
+    ));
+  });
+
+  // ── Recovery Sheet ─────────────────────────────────────────────────────
+  const recCols = [
+    {h:"Branch Name",w:18,color:SEG.RECOVERY},{h:"Date",w:13,color:SEG.RECOVERY},{h:"Visited By",w:16,color:SEG.RECOVERY},
+    {h:"Party Name",w:24,color:SEG.RECOVERY},{h:"Outstanding (₹)",w:18,color:SEG.RECOVERY},
+    {h:"Ageing (Days)",w:14,color:SEG.RECOVERY},{h:"Reason",w:26,color:SEG.RECOVERY},
+    {h:"Recovery Plan",w:26,color:SEG.RECOVERY},{h:"Expected Date",w:16,color:SEG.RECOVERY},
+  ];
+  addSheet("Recovery", recCols, (ws, tb) => {
+    rows.forEach(r => (r._allParties.length ? r._allParties : [{}]).forEach(p =>
+      addDataRow(ws, [r.branch,r.date,r.visitedBy,p.party||"",p.outstanding||"",p.ageing||"",p.reason||"",p.recovery_plan||"",p.expected_date||""], [4,5], tb)
+    ));
+  });
+
+  // Download
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Patrika-Visit-Matrix-${new Date().toISOString().slice(0,10)}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Visit Card UI ──────────────────────────────────────────────────────────
+function VisitCard({ row, isAdmin }) {
+  const growthColor = row.growth === null ? "" : row.growth < 0 ? "text-red-600" : "text-emerald-700";
+  const Section = ({ title, children }) => (
+    <div className="border-t border-border">
+      <div className="bg-secondary text-secondary-foreground px-4 py-1.5">
+        <span className="text-[10px] uppercase tracking-[0.15em] font-semibold">{title}</span>
+      </div>
+      <div className="px-4 py-3 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2">{children}</div>
+    </div>
+  );
+  const Field = ({ label, value, accent }) => (
     <div>
-      {/* Header bar with count + Add button */}
-      <div className="flex items-center justify-between mb-5">
-        <span className="text-xs text-muted-foreground">
-          {entries.length} {entryLabel.toLowerCase()}{entries.length !== 1 ? "s" : ""} captured
-        </span>
-        {!readOnly && (
-        <Button
-          onClick={addEntry}
-          className="rounded-none bg-primary hover:bg-primary/90 h-10"
-        >
-          <Plus className="w-4 h-4 mr-2" /> Add {entryLabel}
-        </Button>
-      </div>
-
-      {entries.length === 0 && (
-        <div className="border border-dashed border-border p-12 text-center bg-white">
-          <p className="text-sm text-muted-foreground">
-            No {entryLabel.toLowerCase()}s yet. Click "Add {entryLabel}" to begin.
-          </p>
+      <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
+      <div className={`text-sm font-medium mt-0.5 ${accent || ""}`}>{value || "—"}</div>
+    </div>
+  );
+  return (
+    <div className="border border-border bg-white">
+      <div className="bg-secondary text-secondary-foreground px-5 py-3 flex items-center justify-between">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Branch Visit</div>
+          <h3 className="text-xl font-bold">{row.branch}</h3>
         </div>
-      )}
-
-      {/* Entry cards */}
-      <div className="space-y-4">
-        {entries.map((entry, idx) => (
-          <div key={idx} className="border border-border bg-white">
-            {/* Card header */}
-            <div className="bg-secondary text-secondary-foreground flex items-center justify-between px-5 py-3">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-mono opacity-60">{String(idx + 1).padStart(2, "0")}</span>
-                <span className="font-bold text-base">
-                  {getEntryName(entry) || `${entryLabel} ${idx + 1}`}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => toggleCollapse(idx)}
-                  className="p-1.5 hover:bg-white/10 rounded"
-                  title={collapsed[idx] ? "Expand" : "Collapse"}
-                >
-                  {collapsed[idx]
-                    ? <ChevronDown className="w-4 h-4" />
-                    : <ChevronUp className="w-4 h-4" />}
-                </button>
-                {!readOnly && (
-                <button
-                  onClick={() => removeEntry(idx)}
-                  className="p-1.5 hover:bg-primary/20 rounded text-primary-foreground hover:text-primary"
-                  title="Delete"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Card body */}
-            {!collapsed[idx] && (
-              <SegmentForm
-                data={entry}
-                onChange={(d) => updateEntry(idx, d)}
-                schema={schema}
-              />
-            )}
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <div className="text-[10px] opacity-60 uppercase tracking-wider">Date</div>
+            <div className="text-sm font-mono font-semibold">{row.date}</div>
           </div>
-        ))}
+          <div className="text-right">
+            <div className="text-[10px] opacity-60 uppercase tracking-wider">Visited By</div>
+            <div className="text-sm font-semibold">{row.visitedBy}</div>
+          </div>
+          {isAdmin && (
+            <Link to={`/visits/${row.id}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70 border border-secondary-foreground/30 px-3 py-1.5 bg-primary text-primary-foreground">
+              Edit <ExternalLink className="w-3 h-3" />
+            </Link>
+          )}
+          <Link to={`/visits/${row.id}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70 border border-secondary-foreground/30 px-3 py-1.5">
+            Open <ExternalLink className="w-3 h-3" />
+          </Link>
+        </div>
       </div>
+      <Section title="Branch Head">
+        <Field label="Name(s)" value={row.bhNames} />
+        <Field label="Designation" value={row.bhDesig} />
+        <Field label="Mobile" value={row.bhMobile} />
+        <Field label="Staff Vacancy" value={row.staffVacancy} />
+        <Field label="Daily Copies" value={row.dailyCopies?.toLocaleString("en-IN")} />
+        <Field label="Last Year Copies" value={row.lyCopies?.toLocaleString("en-IN")} />
+        <Field label="Growth %" value={row.growth !== null ? `${row.growth}%` : null} accent={growthColor} />
+        <Field label="Monthly Revenue" value={fmtINR(row.revenue)} />
+        <Field label="Outstanding" value={fmtINR(row.bhOutstanding)} accent={row.bhOutstanding > 0 ? "text-red-600" : ""} />
+      </Section>
+      <Section title="Circulation">
+        <Field label="Incharge(s)" value={row.circNames} />
+        <Field label="Weak Agents" value={String(row.weakAgentsCount || 0)} accent={row.weakAgentsCount > 0 ? "text-red-600 font-bold" : ""} />
+        <Field label="Weak Agent Names" value={row.weakAgentsList} />
+      </Section>
+      <Section title="Agent">
+        <Field label="Agent(s)" value={row.agentNames} />
+        <Field label="Total Agents" value={String(row.agentCount || 0)} />
+        <Field label="Outstanding" value={fmtINR(row.agentOutstanding)} accent={row.agentOutstanding > 0 ? "text-red-600" : ""} />
+      </Section>
+      <Section title="Hawker">
+        <Field label="Hawker(s)" value={row.hawkerNames} />
+        <Field label="Total" value={String(row.hawkerCount || 0)} />
+      </Section>
+      <Section title="Correspondent">
+        <Field label="Correspondent(s)" value={row.corrNames} />
+        <Field label="Total" value={String(row.corrCount || 0)} />
+      </Section>
+      <Section title="Advertisement">
+        <Field label="Member(s)" value={row.advNames} />
+        <Field label="Ad Target" value={fmtINR(row.adTarget)} />
+        <Field label="Achievement" value={fmtINR(row.adAchiev)} />
+        <Field label="Achievement %" value={row.adPct ? `${row.adPct}%` : null} accent={row.adPct && Number(row.adPct) < 80 ? "text-red-600" : "text-emerald-700"} />
+        <Field label="Lost Clients" value={String(row.lostClientsCount || 0)} accent={row.lostClientsCount > 0 ? "text-red-600" : ""} />
+        <Field label="Lost Client Names" value={row.lostClientsList} />
+      </Section>
+      <Section title="Ad Agency">
+        <Field label="Agency(s)" value={row.agencyNames} />
+        <Field label="Total" value={String(row.agencyCount || 0)} />
+      </Section>
+      <Section title="Recovery">
+        <Field label="Parties" value={String(row.recoveryParties || 0)} />
+        <Field label="Total Outstanding" value={fmtINR(row.totalRecovery)} accent={row.totalRecovery > 0 ? "text-red-600 font-bold" : ""} />
+      </Section>
     </div>
   );
 }
 
-// ── Main VisitDetail ───────────────────────────────────────────────────────
-export default function VisitDetail() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const { isAdmin } = useAuth();
-  const [visit, setVisit] = useState(null);
-  const [activeTab, setActiveTab] = useState("dashboard");
-  const [overrides, setOverrides] = useState({});
-  const [saving, setSaving] = useState(false);
-  const [genExec, setGenExec] = useState(false);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editorSegment, setEditorSegment] = useState(null);
-  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-  const [pendingSaveKey, setPendingSaveKey] = useState(null);
-  const [noteForm, setNoteForm] = useState({ positives: "", negatives: "", note: "" });
+// ── Main ───────────────────────────────────────────────────────────────────
+export default function VisitMatrix() {
+  const [visits, setVisits] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+  const [filterBranch, setFilterBranch] = useState("");
+  const [filterUser, setFilterUser] = useState("");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
-  const load = useCallback(async () => {
+  // Get isAdmin from auth
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
     try {
-      const [v, s] = await Promise.all([api.get(`/visits/${id}`), api.get(`/schemas`)]);
-      setVisit(v.data);
-      setOverrides(s.data || {});
-    } catch (err) {
-      if (err.response?.status === 403) toast.error("Access denied");
-      else toast.error("Visit not found");
-      navigate("/");
-    }
-  }, [id, navigate]);
+      const u = JSON.parse(localStorage.getItem("user") || "{}");
+      setIsAdmin(u.role === "admin");
+    } catch {}
+  }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    api.get("/visits").then(({ data }) => setVisits(data)).catch(() => {}).finally(() => setLoading(false));
+  }, []);
 
-  // For multi-entry segments, data is stored as an array under segments[key]
-  // For summary (single), data is stored as object
-  const isMultiEntry = (key) => key !== "summary";
+  const rows = useMemo(() => visits.map(buildRow), [visits]);
+  const filtered = useMemo(() => rows.filter(r => {
+    if (filterBranch && !r.branch.toLowerCase().includes(filterBranch.toLowerCase())) return false;
+    if (filterUser && !r.visitedBy.toLowerCase().includes(filterUser.toLowerCase())) return false;
+    if (filterDateFrom && r.date < filterDateFrom) return false;
+    if (filterDateTo && r.date > filterDateTo) return false;
+    return true;
+  }), [rows, filterBranch, filterUser, filterDateFrom, filterDateTo]);
 
-  const updateSegmentLocal = (key, data) => {
-    setVisit((v) => ({ ...v, segments: { ...v.segments, [key]: data } }));
+  const hasFilters = filterBranch || filterUser || filterDateFrom || filterDateTo;
+  const clearFilters = () => { setFilterBranch(""); setFilterUser(""); setFilterDateFrom(""); setFilterDateTo(""); };
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try { await downloadExcel(filtered); }
+    catch (e) { console.error(e); alert("Download failed: " + e.message); }
+    finally { setDownloading(false); }
   };
 
-  const openSaveDialog = (key) => {
-    setPendingSaveKey(key);
-    setNoteForm({ positives: "", negatives: "", note: "" });
-    setSaveDialogOpen(true);
-  };
-
-  const saveSegment = async () => {
-    const key = pendingSaveKey;
-    if (!key) return;
-    setSaving(true);
-    try {
-      await api.put(`/visits/${id}/segment/${key}`, {
-        data: visit.segments[key] || (isMultiEntry(key) ? [] : {}),
-        ...noteForm,
-      });
-      toast.success("Segment saved");
-      setSaveDialogOpen(false);
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Save failed");
-    } finally { setSaving(false); }
-  };
-
-  const setAiInsight = (key, text) => {
-    setVisit((v) => ({ ...v, ai_insights: { ...(v.ai_insights || {}), [key]: text } }));
-  };
-
-  const generateExec = async () => {
-    setGenExec(true);
-    try {
-      const { data } = await api.post(`/visits/${id}/executive-summary`);
-      setVisit((v) => ({ ...v, executive_summary: data.summary }));
-      toast.success("Executive Summary ready");
-      setActiveTab("executive");
-    } catch { toast.error("Failed to generate summary"); }
-    finally { setGenExec(false); }
-  };
-
-  const openEditor = (segKey) => { setEditorSegment(segKey); setEditorOpen(true); };
-  const onSchemaSaved = () => { api.get("/schemas").then(({ data }) => setOverrides(data || {})); };
-
-  if (!visit) return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
-      <div className="p-12 text-sm text-muted-foreground">Loading...</div>
+  if (loading) return (
+    <div className="min-h-screen bg-background"><AppHeader />
+      <div className="p-12 flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="w-4 h-4 animate-spin" /> Loading...
+      </div>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
-
-      <main className="max-w-[1400px] mx-auto px-6 py-8">
-        <div className="flex items-end justify-between mb-6 no-print">
-          <div className="flex items-center gap-4">
-            <Link to="/" data-testid="back-to-list-btn" className="text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground flex items-center gap-1.5">
-              <ArrowLeft className="w-3.5 h-3.5" /> All Visits
-            </Link>
-            <div className="h-6 w-px bg-border" />
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-mono">Branch Visit</div>
-              <h1 className="text-3xl font-extrabold tracking-tight">
-                {visit.branch_name} <span className="text-muted-foreground font-normal">· {visit.visit_date}</span>
-              </h1>
-              <div className="text-xs text-muted-foreground mt-1">
-                By {visit.created_by_name} · Last edited: {visit.last_edited_by_name || "—"}
-              </div>
-            </div>
+      <main className="max-w-[1400px] mx-auto px-6 py-10">
+        <div className="flex items-end justify-between mb-6">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-2">All Visits</div>
+            <h2 className="text-4xl font-extrabold tracking-tight">Visit Matrix</h2>
+            <p className="text-sm text-muted-foreground mt-2">{filtered.length} of {rows.length} visits</p>
           </div>
           <div className="flex gap-2">
-            <Button data-testid="print-btn" variant="outline" onClick={() => window.print()} className="rounded-none h-10">
-              <Printer className="w-4 h-4 mr-2" /> Print / PDF
+            <Button variant="outline" onClick={() => setShowFilters(!showFilters)} className="rounded-none h-10">
+              <Filter className="w-4 h-4 mr-2" />
+              Filters {hasFilters && <span className="ml-1.5 bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 rounded-full">ON</span>}
             </Button>
-            <Button data-testid="gen-exec-summary-btn" onClick={generateExec} disabled={genExec} className="rounded-none bg-primary hover:bg-primary/90 h-10">
-              {genExec ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-              Director Summary
+            <Button onClick={handleDownload} disabled={downloading} className="rounded-none h-10 bg-emerald-700 hover:bg-emerald-800">
+              {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              {downloading ? "Preparing..." : "Download Excel"}
             </Button>
           </div>
         </div>
-
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="rounded-none h-auto p-0 bg-transparent border-b border-foreground w-full justify-start overflow-x-auto flex-wrap">
-            <TabsTrigger data-testid="tab-dashboard" value="dashboard" className="rounded-none data-[state=active]:bg-foreground data-[state=active]:text-background px-4 py-2.5 text-xs uppercase tracking-wider font-semibold border-r border-border">
-              <BarChart3 className="w-3.5 h-3.5 mr-1.5" /> Dashboard
-            </TabsTrigger>
-            <TabsTrigger data-testid="tab-executive" value="executive" className="rounded-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground px-4 py-2.5 text-xs uppercase tracking-wider font-semibold border-r border-border">
-              <ScrollText className="w-3.5 h-3.5 mr-1.5" /> Executive
-            </TabsTrigger>
-            {SEGMENTS.map(s => (
-              <TabsTrigger key={s.key} data-testid={`tab-${s.key}`} value={s.key} className="rounded-none data-[state=active]:bg-foreground data-[state=active]:text-background px-4 py-2.5 text-xs uppercase tracking-wider font-semibold border-r border-border">
-                {s.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-
-          <TabsContent value="dashboard" className="mt-8">
-            <Dashboard visit={visit} />
-          </TabsContent>
-
-          <TabsContent value="executive" className="mt-8">
-            <div className="border border-border bg-white p-8 max-w-4xl">
-              <div className="flex items-start justify-between mb-6 border-b border-foreground pb-5">
-                <div>
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-mono">Director&apos;s Brief</div>
-                  <h2 className="text-3xl font-extrabold tracking-tight mt-1">Executive Summary</h2>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {visit.branch_name} · {visit.visit_date} · {visit.visiting_team || "Visiting Team"}
-                  </p>
-                </div>
-                <div className="text-right text-[10px] uppercase tracking-widest text-muted-foreground font-mono">
-                  Patrika<br />Director Office
-                </div>
+        {showFilters && (
+          <div className="border border-border bg-white p-5 mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Branch Name</div>
+              <Input value={filterBranch} onChange={e => setFilterBranch(e.target.value)} placeholder="e.g. Bikaner" className="rounded-none h-9" />
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Visited By</div>
+              <Input value={filterUser} onChange={e => setFilterUser(e.target.value)} placeholder="e.g. Admin" className="rounded-none h-9" />
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Date From</div>
+              <Input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} className="rounded-none h-9" />
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Date To</div>
+              <Input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} className="rounded-none h-9" />
+            </div>
+            {hasFilters && (
+              <div className="col-span-2 md:col-span-4 flex justify-end">
+                <Button variant="outline" size="sm" onClick={clearFilters} className="rounded-none h-8 text-xs">
+                  <X className="w-3 h-3 mr-1" /> Clear Filters
+                </Button>
               </div>
-              {visit.executive_summary ? (
-                <div data-testid="executive-summary-text" className="ai-md">
-                  {renderMd(visit.executive_summary)}
-                </div>
-              ) : (
-                <div className="py-16 text-center">
-                  <FileText className="w-10 h-10 mx-auto mb-4 text-muted-foreground" strokeWidth={1.5} />
-                  <p className="text-sm text-muted-foreground mb-4">Executive Summary not yet generated.</p>
-                  <Button data-testid="gen-exec-summary-inline-btn" onClick={generateExec} disabled={genExec} className="rounded-none bg-primary hover:bg-primary/90">
-                    {genExec ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                    Generate Executive Summary
-                  </Button>
-                </div>
-              )}
-            </div>
-          </TabsContent>
-
-          {SEGMENTS.map((s) => {
-            const merged = mergeSchema(SCHEMAS[s.key], overrides[s.key]);
-            const segData = visit.segments[s.key];
-            const multi = isMultiEntry(s.key);
-
-            return (
-              <TabsContent key={s.key} value={s.key} className="mt-8">
-                {/* Segment header */}
-                <div className="flex items-end justify-between mb-5 no-print">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-mono">
-                      Segment {SEGMENTS.findIndex(x => x.key === s.key) + 1} of {SEGMENTS.length}
-                    </div>
-                    <h2 className="text-3xl font-extrabold tracking-tight">{s.label}</h2>
-                  </div>
-                  <div className="flex gap-2">
-                    {isAdmin && (
-                      <Button data-testid={`edit-questions-${s.key}-btn`} variant="outline" onClick={() => openEditor(s.key)} className="rounded-none h-10">
-                        <Settings2 className="w-4 h-4 mr-2" /> Edit Questions
-                      </Button>
-                    )}
-                    <Button data-testid={`save-${s.key}-btn`} onClick={() => openSaveDialog(s.key)} className="rounded-none bg-secondary hover:bg-secondary/90 h-10">
-                      <Save className="w-4 h-4 mr-2" /> Save Segment
-                    </Button>
-                  </div>
-                </div>
-                <div className="editorial-rule mb-6" />
-
-                {/* Multi-entry (all segments except summary) */}
-                {multi ? (
-                  <MultiEntrySegment
-                    segKey={s.key}
-                    schema={merged}
-                    data={Array.isArray(segData) ? segData : []}
-                    onChange={(d) => updateSegmentLocal(s.key, d)}
-                    readOnly={!isAdmin && visit.created_by !== visit.current_user_id}
-                  />
-                ) : (
-                  /* Summary — single form */
-                  <SegmentForm
-                    data={segData || {}}
-                    onChange={(d) => updateSegmentLocal(s.key, d)}
-                    schema={merged}
-                  />
-                )}
-
-                <AIInsightPanel
-                  visitId={visit.id}
-                  segmentKey={s.key}
-                  currentInsight={(visit.ai_insights || {})[s.key]}
-                  onUpdate={(t) => setAiInsight(s.key, t)}
-                />
-              </TabsContent>
-            );
-          })}
-        </Tabs>
-      </main>
-
-      <QuestionEditor open={editorOpen} onOpenChange={setEditorOpen} segmentKey={editorSegment} onSaved={onSchemaSaved} />
-
-      <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
-        <DialogContent className="rounded-none border-foreground">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-extrabold">Save Segment</DialogTitle>
-            <p className="text-xs text-muted-foreground">
-              For the audit trail — optionally capture what was positive and what was a problem.
-            </p>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label className="text-[10px] uppercase tracking-wider text-emerald-700">What was positive</Label>
-              <Textarea data-testid="save-positives-input" value={noteForm.positives} onChange={(e) => setNoteForm({ ...noteForm, positives: e.target.value })} placeholder="e.g. Branch head proactive, recovery improving..." rows={2} className="rounded-none mt-1" />
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase tracking-wider text-primary">Problems / Issues</Label>
-              <Textarea data-testid="save-negatives-input" value={noteForm.negatives} onChange={(e) => setNoteForm({ ...noteForm, negatives: e.target.value })} placeholder="e.g. Outstanding growing, 2 weak agents..." rows={2} className="rounded-none mt-1" />
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase tracking-wider">Note (optional)</Label>
-              <Textarea data-testid="save-note-input" value={noteForm.note} onChange={(e) => setNoteForm({ ...noteForm, note: e.target.value })} rows={2} className="rounded-none mt-1" />
-            </div>
+            )}
           </div>
-          <DialogFooter>
-            <Button onClick={() => setSaveDialogOpen(false)} variant="outline" className="rounded-none">Cancel</Button>
-            <Button data-testid="confirm-save-btn" onClick={saveSegment} disabled={saving} className="rounded-none bg-primary hover:bg-primary/90">
-              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+        <div className="editorial-rule mb-8" />
+        {filtered.length === 0 ? (
+          <div className="border border-border p-16 text-center bg-white">
+            <p className="text-sm text-muted-foreground">{hasFilters ? "No visits match filters." : "No visits yet."}</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {filtered.map(row => <VisitCard key={row.id} row={row} isAdmin={isAdmin} />)}
+          </div>
+        )}
+      </main>
     </div>
   );
 }
