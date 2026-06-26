@@ -287,9 +287,17 @@ function SegmentSection({ seg, segData, visitId, isSaved, onSaved }) {
       toast.success(`${seg.label} saved!`);
       onSaved(seg.key, localData);
     } catch (err) {
-      const msg = err?.response?.data?.detail || err?.message || "Server error - try again";
+      console.error("Segment save error full:", err);
+      console.error("Response:", err?.response);
+      console.error("Response data:", err?.response?.data);
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      const msg = detail 
+        ? `${status}: ${detail}` 
+        : err?.message 
+        ? err.message 
+        : "Network/server error";
       toast.error(`Save failed: ${msg}`);
-      console.error("Segment save error:", err?.response || err);
     } finally {
       setSaving(false);
     }
