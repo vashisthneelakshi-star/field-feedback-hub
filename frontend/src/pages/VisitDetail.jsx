@@ -1,496 +1,441 @@
-import { useEffect, useState, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState, useCallback } from "react";
+import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import AppHeader from "../components/AppHeader";
-import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
-import { ExternalLink, Loader2, Download, Filter, X } from "lucide-react";
+import { Input } from "../components/ui/input";
+import { Textarea } from "../components/ui/textarea";
+import { Label } from "../components/ui/label";
+import { toast } from "sonner";
+import {
+  Save, Plus, Trash2, Loader2, ChevronDown, ChevronUp,
+  CheckCircle2, Circle, ArrowLeft
+} from "lucide-react";
 
-const fmtINR = (n) => {
-  const v = Number(n) || 0;
-  if (!v) return "";
-  if (v >= 10000000) return "₹" + (v / 10000000).toFixed(2) + " Cr";
-  if (v >= 100000) return "₹" + (v / 100000).toFixed(2) + " L";
-  if (v >= 1000) return "₹" + (v / 1000).toFixed(1) + "K";
-  return "₹" + v.toLocaleString("en-IN");
+// ─── Segment config ───────────────────────────────────────────────────────────
+const SEGMENTS = [
+  { key: "branch_head",    label: "Branch Head",       color: "bg-blue-700" },
+  { key: "circulation",   label: "Circulation",        color: "bg-green-700" },
+  { key: "agent",         label: "Agent",              color: "bg-purple-700" },
+  { key: "hawker",        label: "Hawker",             color: "bg-orange-700" },
+  { key: "correspondent", label: "Correspondent",      color: "bg-teal-700" },
+  { key: "advertisement", label: "Advertisement",      color: "bg-rose-700" },
+  { key: "ad_agency",     label: "Ad Agency",          color: "bg-indigo-700" },
+  { key: "recovery",      label: "Recovery",           color: "bg-amber-700" },
+  { key: "summary",       label: "Daily Summary",      color: "bg-gray-700" },
+];
+
+const emptyBranchHead = () => ({ name: "", designation: "", mobile: "", daily_copies: "", last_year_copies: "", growth_pct: "", monthly_revenue: "", outstanding: "", staff_vacancy: "", notes: "" });
+const emptyCirculation = () => ({ name: "", weak_agents: 0, weak_agent_names: "", notes: "" });
+const emptyAgent       = () => ({ agent_name: "", area: "", outstanding: "", notes: "" });
+const emptyHawker      = () => ({ hawker_name: "", area: "", issues: "", notes: "" });
+const emptyCorrespondent = () => ({ name: "", mobile: "", issues: "", notes: "" });
+const emptyAdvertisement = () => ({ name: "", target: "", achievement: "", lost_clients: "", notes: "" });
+const emptyAdAgency    = () => ({ agency_name: "", contact: "", issues: "", notes: "" });
+const emptyRecovery    = () => ({ party_name: "", outstanding: "", age_days: "", notes: "" });
+
+// ─── Field helper ─────────────────────────────────────────────────────────────
+function Field({ label, value, onChange, type = "text", rows, span = 1 }) {
+  const cls = span === 2 ? "col-span-2" : "";
+  return (
+    <div className={cls}>
+      <Label className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1 block">{label}</Label>
+      {rows ? (
+        <Textarea value={value || ""} onChange={e => onChange(e.target.value)} rows={rows} className="rounded-none text-sm" />
+      ) : (
+        <Input type={type} value={value || ""} onChange={e => onChange(e.target.value)} className="rounded-none text-sm h-9" />
+      )}
+    </div>
+  );
+}
+
+// ─── Multi-entry card ─────────────────────────────────────────────────────────
+function MultiCard({ items, onUpdate, onAdd, onRemove, emptyFn, renderFields }) {
+  return (
+    <div className="space-y-4">
+      {items.map((item, idx) => (
+        <div key={idx} className="border border-border bg-white p-5 relative">
+          <div className="absolute top-3 right-3">
+            {items.length > 1 && (
+              <button onClick={() => onRemove(idx)} className="text-muted-foreground hover:text-primary">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3 pr-8">
+            {renderFields(item, (field, val) => onUpdate(idx, field, val))}
+          </div>
+        </div>
+      ))}
+      <button
+        onClick={onAdd}
+        className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground border border-dashed border-border w-full justify-center py-3 transition-colors hover:border-foreground"
+      >
+        <Plus className="w-3.5 h-3.5" /> Add Entry
+      </button>
+    </div>
+  );
+}
+
+// ─── Segment Panels ───────────────────────────────────────────────────────────
+function BranchHeadPanel({ data, setData }) {
+  const items = Array.isArray(data) ? data : (data ? [data] : [emptyBranchHead()]);
+  const set = (arr) => setData(arr);
+  return (
+    <MultiCard
+      items={items}
+      onAdd={() => set([...items, emptyBranchHead()])}
+      onRemove={(i) => set(items.filter((_, idx) => idx !== i))}
+      onUpdate={(i, f, v) => { const a = [...items]; a[i] = { ...a[i], [f]: v }; set(a); }}
+      emptyFn={emptyBranchHead}
+      renderFields={(item, upd) => (<>
+        <Field label="Name" value={item.name} onChange={v => upd("name", v)} />
+        <Field label="Designation" value={item.designation} onChange={v => upd("designation", v)} />
+        <Field label="Mobile" value={item.mobile} onChange={v => upd("mobile", v)} />
+        <Field label="Staff Vacancy" value={item.staff_vacancy} onChange={v => upd("staff_vacancy", v)} />
+        <Field label="Daily Copies" type="number" value={item.daily_copies} onChange={v => upd("daily_copies", v)} />
+        <Field label="Last Year Copies" type="number" value={item.last_year_copies} onChange={v => upd("last_year_copies", v)} />
+        <Field label="Growth %" type="number" value={item.growth_pct} onChange={v => upd("growth_pct", v)} />
+        <Field label="Monthly Revenue (₹)" type="number" value={item.monthly_revenue} onChange={v => upd("monthly_revenue", v)} />
+        <Field label="Outstanding (₹)" type="number" value={item.outstanding} onChange={v => upd("outstanding", v)} />
+        <Field label="Notes" value={item.notes} onChange={v => upd("notes", v)} rows={2} span={2} />
+      </>)}
+    />
+  );
+}
+
+function CirculationPanel({ data, setData }) {
+  const items = Array.isArray(data) ? data : (data ? [data] : [emptyCirculation()]);
+  const set = (arr) => setData(arr);
+  return (
+    <MultiCard
+      items={items}
+      onAdd={() => set([...items, emptyCirculation()])}
+      onRemove={(i) => set(items.filter((_, idx) => idx !== i))}
+      onUpdate={(i, f, v) => { const a = [...items]; a[i] = { ...a[i], [f]: v }; set(a); }}
+      emptyFn={emptyCirculation}
+      renderFields={(item, upd) => (<>
+        <Field label="Incharge Name" value={item.name} onChange={v => upd("name", v)} />
+        <Field label="Weak Agents Count" type="number" value={item.weak_agents} onChange={v => upd("weak_agents", v)} />
+        <Field label="Weak Agent Names" value={item.weak_agent_names} onChange={v => upd("weak_agent_names", v)} span={2} />
+        <Field label="Notes" value={item.notes} onChange={v => upd("notes", v)} rows={2} span={2} />
+      </>)}
+    />
+  );
+}
+
+function AgentPanel({ data, setData }) {
+  const items = Array.isArray(data) ? data : (data ? [data] : [emptyAgent()]);
+  const set = (arr) => setData(arr);
+  return (
+    <MultiCard
+      items={items}
+      onAdd={() => set([...items, emptyAgent()])}
+      onRemove={(i) => set(items.filter((_, idx) => idx !== i))}
+      onUpdate={(i, f, v) => { const a = [...items]; a[i] = { ...a[i], [f]: v }; set(a); }}
+      emptyFn={emptyAgent}
+      renderFields={(item, upd) => (<>
+        <Field label="Agent Name" value={item.agent_name} onChange={v => upd("agent_name", v)} />
+        <Field label="Area" value={item.area} onChange={v => upd("area", v)} />
+        <Field label="Outstanding (₹)" type="number" value={item.outstanding} onChange={v => upd("outstanding", v)} />
+        <Field label="Notes" value={item.notes} onChange={v => upd("notes", v)} rows={2} />
+      </>)}
+    />
+  );
+}
+
+function HawkerPanel({ data, setData }) {
+  const items = Array.isArray(data) ? data : (data ? [data] : [emptyHawker()]);
+  const set = (arr) => setData(arr);
+  return (
+    <MultiCard
+      items={items}
+      onAdd={() => set([...items, emptyHawker()])}
+      onRemove={(i) => set(items.filter((_, idx) => idx !== i))}
+      onUpdate={(i, f, v) => { const a = [...items]; a[i] = { ...a[i], [f]: v }; set(a); }}
+      emptyFn={emptyHawker}
+      renderFields={(item, upd) => (<>
+        <Field label="Hawker Name" value={item.hawker_name} onChange={v => upd("hawker_name", v)} />
+        <Field label="Area" value={item.area} onChange={v => upd("area", v)} />
+        <Field label="Issues" value={item.issues} onChange={v => upd("issues", v)} rows={2} />
+        <Field label="Notes" value={item.notes} onChange={v => upd("notes", v)} rows={2} />
+      </>)}
+    />
+  );
+}
+
+function CorrespondentPanel({ data, setData }) {
+  const items = Array.isArray(data) ? data : (data ? [data] : [emptyCorrespondent()]);
+  const set = (arr) => setData(arr);
+  return (
+    <MultiCard
+      items={items}
+      onAdd={() => set([...items, emptyCorrespondent()])}
+      onRemove={(i) => set(items.filter((_, idx) => idx !== i))}
+      onUpdate={(i, f, v) => { const a = [...items]; a[i] = { ...a[i], [f]: v }; set(a); }}
+      emptyFn={emptyCorrespondent}
+      renderFields={(item, upd) => (<>
+        <Field label="Name" value={item.name} onChange={v => upd("name", v)} />
+        <Field label="Mobile" value={item.mobile} onChange={v => upd("mobile", v)} />
+        <Field label="Issues" value={item.issues} onChange={v => upd("issues", v)} rows={2} />
+        <Field label="Notes" value={item.notes} onChange={v => upd("notes", v)} rows={2} />
+      </>)}
+    />
+  );
+}
+
+function AdvertisementPanel({ data, setData }) {
+  const items = Array.isArray(data) ? data : (data ? [data] : [emptyAdvertisement()]);
+  const set = (arr) => setData(arr);
+  return (
+    <MultiCard
+      items={items}
+      onAdd={() => set([...items, emptyAdvertisement()])}
+      onRemove={(i) => set(items.filter((_, idx) => idx !== i))}
+      onUpdate={(i, f, v) => { const a = [...items]; a[i] = { ...a[i], [f]: v }; set(a); }}
+      emptyFn={emptyAdvertisement}
+      renderFields={(item, upd) => (<>
+        <Field label="Name" value={item.name} onChange={v => upd("name", v)} />
+        <Field label="Target (₹)" type="number" value={item.target} onChange={v => upd("target", v)} />
+        <Field label="Achievement (₹)" type="number" value={item.achievement} onChange={v => upd("achievement", v)} />
+        <Field label="Lost Clients" value={item.lost_clients} onChange={v => upd("lost_clients", v)} />
+        <Field label="Notes" value={item.notes} onChange={v => upd("notes", v)} rows={2} span={2} />
+      </>)}
+    />
+  );
+}
+
+function AdAgencyPanel({ data, setData }) {
+  const items = Array.isArray(data) ? data : (data ? [data] : [emptyAdAgency()]);
+  const set = (arr) => setData(arr);
+  return (
+    <MultiCard
+      items={items}
+      onAdd={() => set([...items, emptyAdAgency()])}
+      onRemove={(i) => set(items.filter((_, idx) => idx !== i))}
+      onUpdate={(i, f, v) => { const a = [...items]; a[i] = { ...a[i], [f]: v }; set(a); }}
+      emptyFn={emptyAdAgency}
+      renderFields={(item, upd) => (<>
+        <Field label="Agency Name" value={item.agency_name} onChange={v => upd("agency_name", v)} />
+        <Field label="Contact" value={item.contact} onChange={v => upd("contact", v)} />
+        <Field label="Issues" value={item.issues} onChange={v => upd("issues", v)} rows={2} />
+        <Field label="Notes" value={item.notes} onChange={v => upd("notes", v)} rows={2} />
+      </>)}
+    />
+  );
+}
+
+function RecoveryPanel({ data, setData }) {
+  const items = Array.isArray(data) ? data : (data ? [data] : [emptyRecovery()]);
+  const set = (arr) => setData(arr);
+  return (
+    <MultiCard
+      items={items}
+      onAdd={() => set([...items, emptyRecovery()])}
+      onRemove={(i) => set(items.filter((_, idx) => idx !== i))}
+      onUpdate={(i, f, v) => { const a = [...items]; a[i] = { ...a[i], [f]: v }; set(a); }}
+      emptyFn={emptyRecovery}
+      renderFields={(item, upd) => (<>
+        <Field label="Party Name" value={item.party_name} onChange={v => upd("party_name", v)} />
+        <Field label="Outstanding (₹)" type="number" value={item.outstanding} onChange={v => upd("outstanding", v)} />
+        <Field label="Age (Days)" type="number" value={item.age_days} onChange={v => upd("age_days", v)} />
+        <Field label="Notes" value={item.notes} onChange={v => upd("notes", v)} rows={2} />
+      </>)}
+    />
+  );
+}
+
+function SummaryPanel({ data, setData }) {
+  const d = data || {};
+  const upd = (f, v) => setData({ ...d, [f]: v });
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <Field label="Overall Summary" value={d.overall_summary} onChange={v => upd("overall_summary", v)} rows={3} span={2} />
+      <Field label="Key Positives" value={d.positives} onChange={v => upd("positives", v)} rows={2} />
+      <Field label="Key Negatives / Issues" value={d.negatives} onChange={v => upd("negatives", v)} rows={2} />
+      <Field label="Action Items" value={d.action_items} onChange={v => upd("action_items", v)} rows={2} span={2} />
+    </div>
+  );
+}
+
+const PANEL_MAP = {
+  branch_head:    BranchHeadPanel,
+  circulation:    CirculationPanel,
+  agent:          AgentPanel,
+  hawker:         HawkerPanel,
+  correspondent:  CorrespondentPanel,
+  advertisement:  AdvertisementPanel,
+  ad_agency:      AdAgencyPanel,
+  recovery:       RecoveryPanel,
+  summary:        SummaryPanel,
 };
 
-const arrOf = (val) => Array.isArray(val) ? val : (val ? [val] : []);
-const names = (val, key) => arrOf(val).map(e => e[key] || e.name || "").filter(Boolean).join(", ") || "";
+// ─── Segment Section ──────────────────────────────────────────────────────────
+function SegmentSection({ seg, segData, visitId, isSaved, onSaved }) {
+  const [open, setOpen] = useState(false);
+  const [localData, setLocalData] = useState(segData);
+  const [saving, setSaving] = useState(false);
+  const Panel = PANEL_MAP[seg.key];
 
-function buildRow(v) {
-  const seg = v.segments || {};
-  const bhArr = arrOf(seg.branch_head);
-  const circArr = arrOf(seg.circulation);
-  const agentArr = arrOf(seg.agent);
-  const hawkerArr = arrOf(seg.hawker);
-  const corrArr = arrOf(seg.correspondent);
-  const advArr = arrOf(seg.advertisement);
-  const agencyArr = arrOf(seg.ad_agency);
-  const recoveryArr = arrOf(seg.recovery);
-  const totalDaily = bhArr.reduce((s, e) => s + (Number(e.daily_copies) || 0), 0);
-  const totalLY = bhArr.reduce((s, e) => s + (Number(e.last_year_copies) || 0), 0);
-  const totalRev = bhArr.reduce((s, e) => s + (Number(e.monthly_revenue) || 0), 0);
-  const totalBhOut = bhArr.reduce((s, e) => s + (Number(e.outstanding) || 0), 0);
-  const growthVals = bhArr.map(e => Number(e.growth_pct)).filter(Boolean);
-  const avgGrowth = growthVals.length ? (growthVals.reduce((a, b) => a + b, 0) / growthVals.length) : null;
-  const weakAgents = circArr.flatMap(e => (e.weak_agents || []).filter(r => r.agent_name));
-  const totalAgentOut = agentArr.reduce((s, e) => s + (Number(e.outstanding) || 0), 0);
-  const totalTarget = advArr.reduce((s, e) => s + (Number(e.target) || 0), 0);
-  const totalAchiev = advArr.reduce((s, e) => s + (Number(e.achievement) || 0), 0);
-  const lostClients = advArr.flatMap(e => (e.lost_clients || []).filter(r => r.client));
-  const allParties = recoveryArr.flatMap(e => (e.parties || []));
-  const totalRecovery = allParties.reduce((s, p) => s + (Number(p.outstanding) || 0), 0);
-  return {
-    id: v.id, branch: v.branch_name, date: v.visit_date, visitedBy: v.created_by_name || "",
-    bhNames: names(seg.branch_head, "name"),
-    bhDesig: bhArr.map(e => e.designation || "").filter(Boolean).join(", "),
-    bhMobile: bhArr.map(e => e.mobile || "").filter(Boolean).join(", "),
-    dailyCopies: totalDaily || null, lyCopies: totalLY || null, growth: avgGrowth,
-    revenue: totalRev || null, bhOutstanding: totalBhOut || null,
-    staffVacancy: bhArr.map(e => e.staff_vacancy || "").filter(Boolean).join(", "),
-    circNames: names(seg.circulation, "name"),
-    weakAgentsCount: weakAgents.length || null,
-    weakAgentsList: weakAgents.map(a => a.agent_name).join(", "),
-    agentNames: names(seg.agent, "agent_name"), agentCount: agentArr.length || null,
-    agentOutstanding: totalAgentOut || null,
-    hawkerNames: names(seg.hawker, "hawker_name"), hawkerCount: hawkerArr.length || null,
-    corrNames: names(seg.correspondent, "name"), corrCount: corrArr.length || null,
-    advNames: names(seg.advertisement, "name"),
-    adTarget: totalTarget || null, adAchiev: totalAchiev || null,
-    adPct: totalTarget ? Number(((totalAchiev / totalTarget) * 100).toFixed(1)) : null,
-    lostClientsCount: lostClients.length || null,
-    lostClientsList: lostClients.map(c => c.client).join(", "),
-    agencyNames: names(seg.ad_agency, "agency_name"), agencyCount: agencyArr.length || null,
-    recoveryParties: allParties.length || null, totalRecovery: totalRecovery || null,
-    _bhArr: bhArr, _circArr: circArr, _agentArr: agentArr, _hawkerArr: hawkerArr,
-    _corrArr: corrArr, _advArr: advArr, _agencyArr: agencyArr,
-    _weakAgents: weakAgents, _lostClients: lostClients, _allParties: allParties,
-  };
-}
+  useEffect(() => { setLocalData(segData); }, [segData]);
 
-// ── Excel Download ─────────────────────────────────────────────────────────
-async function downloadExcel(rows) {
-  const ExcelJS = (await import("exceljs/dist/exceljs.min.js")).default;
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Patrika Director Office";
-
-  // Colors
-  const BLUE_BORDER = { style: "medium", color: { argb: "FF1D6FA8" } };
-  const bdr = { top: BLUE_BORDER, left: BLUE_BORDER, bottom: BLUE_BORDER, right: BLUE_BORDER };
-  const thinBdr = { top: { style: "thin", color: { argb: "FF1D6FA8" } }, left: { style: "thin", color: { argb: "FF1D6FA8" } }, bottom: { style: "thin", color: { argb: "FF1D6FA8" } }, right: { style: "thin", color: { argb: "FF1D6FA8" } } };
-
-  const SEG = {
-    BH:       "FFB91C1C",
-    CIRC:     "FF166534",
-    AGENT:    "FF92400E",
-    HAWKER:   "FF1E3A5F",
-    CORR:     "FF4A1D96",
-    ADV:      "FF7C2D12",
-    AGENCY:   "FF134E4A",
-    RECOVERY: "FF312E81",
-    SUMMARY:  "FF1F3864",
-  };
-
-  // Helper: add a sheet with header row + data rows
-  const addSheet = (name, colDefs, dataFn) => {
-    const ws = wb.addWorksheet(name, {
-      views: [{ showGridLines: false, state: "frozen", ySplit: 1 }],
-    });
-    ws.columns = colDefs.map(c => ({ width: c.w }));
-
-    // Header row
-    const hRow = ws.addRow(colDefs.map(c => c.h));
-    hRow.height = 26;
-    hRow.eachCell((cell, i) => {
-      cell.font = { bold: true, name: "Arial", size: 9, color: { argb: "FFFFFFFF" } };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colDefs[i-1].color || SEG.SUMMARY } };
-      cell.alignment = { horizontal: "center", vertical: "middle", wrapText: false };
-      cell.border = bdr;
-    });
-
-    // Data rows
-    dataFn(ws, thinBdr);
-    return ws;
-  };
-
-  const addDataRow = (ws, vals, numCols, thinBdr) => {
-    const row = ws.addRow(vals);
-    row.height = 18;
-    row.eachCell((cell, i) => {
-      const isNum = numCols && numCols.includes(i - 1);
-      cell.font = { name: "Arial", size: 9 };
-      cell.alignment = { horizontal: isNum ? "center" : "left", vertical: "middle" };
-      cell.border = thinBdr;
-    });
-    return row;
-  };
-
-  // ── Summary Sheet ──────────────────────────────────────────────────────
-  const wsSummary = wb.addWorksheet("Summary", { views: [{ showGridLines: false }] });
-  wsSummary.columns = [{ width: 36 }, { width: 22 }];
-
-  const addSum = (label, value, bgArgb) => {
-    const row = wsSummary.addRow([label, value]);
-    row.height = 20;
-    row.eachCell((cell, i) => {
-      cell.font = { bold: !!bgArgb, name: "Arial", size: 10, color: { argb: bgArgb ? "FFFFFFFF" : "FF111827" } };
-      cell.border = thinBdr;
-      cell.alignment = { horizontal: i === 2 ? "center" : "left", vertical: "middle" };
-      if (bgArgb) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bgArgb } };
-    });
-  };
-
-  const tRow = wsSummary.addRow(["PATRIKA DIRECTOR OFFICE — VISIT MATRIX", ""]);
-  wsSummary.mergeCells("A1:B1");
-  const tc = tRow.getCell(1); tc.value = "PATRIKA DIRECTOR OFFICE — VISIT MATRIX";
-  tc.font = { bold: true, size: 13, color: { argb: "FFFFFFFF" }, name: "Arial" };
-  tc.fill = { type: "pattern", pattern: "solid", fgColor: { argb: SEG.SUMMARY } };
-  tc.alignment = { horizontal: "center", vertical: "middle" };
-  tc.border = bdr;
-  tRow.height = 32;
-
-  wsSummary.addRow([]);
-  addSum("Generated On", new Date().toLocaleDateString("en-IN"));
-  addSum("Total Visits", rows.length);
-  addSum("Total Branches", new Set(rows.map(r => r.branch)).size);
-  wsSummary.addRow([]);
-  addSum("METRIC", "TOTAL", SEG.BH);
-  addSum("Total Daily Copies", rows.reduce((s,r)=>s+(r.dailyCopies||0),0));
-  addSum("Total LY Copies", rows.reduce((s,r)=>s+(r.lyCopies||0),0));
-  addSum("Total Revenue (₹)", rows.reduce((s,r)=>s+(r.revenue||0),0));
-  addSum("Total BH Outstanding (₹)", rows.reduce((s,r)=>s+(r.bhOutstanding||0),0));
-  addSum("Total Ad Target (₹)", rows.reduce((s,r)=>s+(r.adTarget||0),0));
-  addSum("Total Ad Achievement (₹)", rows.reduce((s,r)=>s+(r.adAchiev||0),0));
-  addSum("Total Agent Outstanding (₹)", rows.reduce((s,r)=>s+(r.agentOutstanding||0),0));
-  addSum("Total Recovery Outstanding (₹)", rows.reduce((s,r)=>s+(r.totalRecovery||0),0));
-  addSum("Total Weak Agents", rows.reduce((s,r)=>s+(r.weakAgentsCount||0),0));
-  addSum("Total Lost Clients", rows.reduce((s,r)=>s+(r.lostClientsCount||0),0));
-
-  // ── Branch Head Sheet ──────────────────────────────────────────────────
-  const bhCols = [
-    {h:"Branch Name",w:18,color:SEG.BH},{h:"Date",w:13,color:SEG.BH},{h:"Visited By",w:16,color:SEG.BH},
-    {h:"BH Name",w:22,color:SEG.BH},{h:"Mobile",w:14,color:SEG.BH},{h:"Current Copies",w:14,color:SEG.BH},
-    {h:"LY Copies",w:13,color:SEG.BH},{h:"Growth %",w:12,color:SEG.BH},{h:"Revenue (₹)",w:16,color:SEG.BH},
-    {h:"Outstanding (₹)",w:16,color:SEG.BH},{h:"Staff Vacancy",w:12,color:SEG.BH},
-    {h:"Q1. 3 Biggest Problems",w:32,color:SEG.BH},{h:"Q2. Circulation Reason",w:30,color:SEG.BH},
-    {h:"Q3. Recovery Barrier",w:28,color:SEG.BH},{h:"Q4. Ad Revenue Suggestion",w:28,color:SEG.BH},
-    {h:"Q5. HO Support",w:26,color:SEG.BH},{h:"Team Observation",w:28,color:SEG.BH},
-  ];
-  addSheet("Branch Head", bhCols, (ws, tb) => {
-    rows.forEach(r => (r._bhArr.length ? r._bhArr : [{}]).forEach(e =>
-      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.mobile||"",e.daily_copies||"",e.last_year_copies||"",e.growth_pct?`${e.growth_pct}%`:"",e.monthly_revenue||"",e.outstanding||"",e.staff_vacancy||"",e.q1_problems||"",e.q2_circulation_reason||"",e.q3_recovery_barrier||"",e.q4_ad_revenue||"",e.q5_ho_help||"",e.team_observation||""], [5,6,7,8,9], tb)
-    ));
-  });
-
-  // ── Circulation Sheet ──────────────────────────────────────────────────
-  const circCols = [
-    {h:"Branch Name",w:18,color:SEG.CIRC},{h:"Date",w:13,color:SEG.CIRC},{h:"Visited By",w:16,color:SEG.CIRC},
-    {h:"Incharge Name",w:24,color:SEG.CIRC},{h:"Mobile",w:14,color:SEG.CIRC},{h:"Designation",w:18,color:SEG.CIRC},
-    {h:"Decline Area",w:20,color:SEG.CIRC},{h:"Decline Reason",w:28,color:SEG.CIRC},
-    {h:"Q3. Competitor Strong",w:28,color:SEG.CIRC},{h:"Q4. Growth Potential",w:26,color:SEG.CIRC},
-    {h:"Q5. 90-Day Growth",w:24,color:SEG.CIRC},
-  ];
-  addSheet("Circulation", circCols, (ws, tb) => {
-    rows.forEach(r => (r._circArr.length ? r._circArr : [{}]).forEach(e =>
-      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.mobile||"",e.designation||"",e.decline_area||"",e.decline_reason||"",e.q3_competitor_strong||"",e.q4_growth_potential||"",e.q5_90_day_growth||""], [], tb)
-    ));
-  });
-
-  // ── Agent Sheet ────────────────────────────────────────────────────────
-  const agentCols = [
-    {h:"Branch Name",w:18,color:SEG.AGENT},{h:"Date",w:13,color:SEG.AGENT},{h:"Visited By",w:16,color:SEG.AGENT},
-    {h:"Agent Name",w:22,color:SEG.AGENT},{h:"Mobile",w:14,color:SEG.AGENT},{h:"Agency",w:18,color:SEG.AGENT},
-    {h:"Area",w:16,color:SEG.AGENT},{h:"Current Copies",w:14,color:SEG.AGENT},{h:"LY Copies",w:13,color:SEG.AGENT},
-    {h:"Outstanding (₹)",w:16,color:SEG.AGENT},{h:"Payment Regularity",w:18,color:SEG.AGENT},
-    {h:"Q1. Biggest Problem",w:28,color:SEG.AGENT},{h:"Q2. Competitor Offer",w:26,color:SEG.AGENT},
-    {h:"Q3. 3-Month Growth",w:22,color:SEG.AGENT},{h:"Q4. Help Required",w:24,color:SEG.AGENT},
-    {h:"Q5. Market Growth",w:24,color:SEG.AGENT},{h:"Commitment (Copies)",w:18,color:SEG.AGENT},{h:"Timeline",w:16,color:SEG.AGENT},
-  ];
-  addSheet("Agent", agentCols, (ws, tb) => {
-    rows.forEach(r => (r._agentArr.length ? r._agentArr : [{}]).forEach(e =>
-      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.agent_name||"",e.mobile||"",e.agency||"",e.area||"",e.current_copies||"",e.last_year_copies||"",e.outstanding||"",e.payment_regularity||"",e.q1_problem||"",e.q2_competitor_offer||"",e.q3_3month_growth||"",e.q4_company_help||"",e.q5_market_growth||"",e.additional_copies||"",e.timeline||""], [7,8,9,16], tb)
-    ));
-  });
-
-  // ── Hawker Sheet ───────────────────────────────────────────────────────
-  const hawkerCols = [
-    {h:"Branch Name",w:18,color:SEG.HAWKER},{h:"Date",w:13,color:SEG.HAWKER},{h:"Visited By",w:16,color:SEG.HAWKER},
-    {h:"Hawker Name",w:22,color:SEG.HAWKER},{h:"Mobile",w:14,color:SEG.HAWKER},{h:"Area",w:16,color:SEG.HAWKER},
-    {h:"Q1. Top Selling Newspaper",w:26,color:SEG.HAWKER},{h:"Q2. Reader Complaints",w:28,color:SEG.HAWKER},
-    {h:"Q3. Competitor Scheme",w:26,color:SEG.HAWKER},{h:"Q4. Demand Growth Area",w:26,color:SEG.HAWKER},
-    {h:"Q5. Delivery Problems",w:26,color:SEG.HAWKER},{h:"Team Remarks",w:28,color:SEG.HAWKER},
-  ];
-  addSheet("Hawker", hawkerCols, (ws, tb) => {
-    rows.forEach(r => (r._hawkerArr.length ? r._hawkerArr : [{}]).forEach(e =>
-      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.hawker_name||"",e.mobile||"",e.area||"",e.q1_top_newspaper||"",e.q2_reader_complaint||"",e.q3_competitor_scheme||"",e.q4_demand_area||"",e.q5_delivery_problem||"",e.team_remarks||""], [], tb)
-    ));
-  });
-
-  // ── Correspondent Sheet ────────────────────────────────────────────────
-  const corrCols = [
-    {h:"Branch Name",w:18,color:SEG.CORR},{h:"Date",w:13,color:SEG.CORR},{h:"Visited By",w:16,color:SEG.CORR},
-    {h:"Name",w:24,color:SEG.CORR},{h:"Mobile",w:14,color:SEG.CORR},{h:"Area",w:16,color:SEG.CORR},
-    {h:"Q1. Reader Sentiment",w:28,color:SEG.CORR},{h:"Q2. Weak Areas",w:26,color:SEG.CORR},
-    {h:"Q3. Competitor Strong",w:26,color:SEG.CORR},{h:"Q4. Content Feedback",w:28,color:SEG.CORR},
-    {h:"Q5. Growth Scope",w:26,color:SEG.CORR},{h:"Observation",w:28,color:SEG.CORR},
-  ];
-  addSheet("Correspondent", corrCols, (ws, tb) => {
-    rows.forEach(r => (r._corrArr.length ? r._corrArr : [{}]).forEach(e =>
-      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.mobile||"",e.area||"",e.q1_reader_sentiment||"",e.q2_weak_areas||"",e.q3_competitor_strong||"",e.q4_content_feedback||"",e.q5_growth_scope||"",e.observation||""], [], tb)
-    ));
-  });
-
-  // ── Advertisement Sheet ────────────────────────────────────────────────
-  const advCols = [
-    {h:"Branch Name",w:18,color:SEG.ADV},{h:"Date",w:13,color:SEG.ADV},{h:"Visited By",w:16,color:SEG.ADV},
-    {h:"Member Name",w:22,color:SEG.ADV},{h:"Designation",w:18,color:SEG.ADV},
-    {h:"Ad Target (₹)",w:16,color:SEG.ADV},{h:"Achievement (₹)",w:16,color:SEG.ADV},{h:"Achievement %",w:14,color:SEG.ADV},
-    {h:"Q3. Why Clients Lost",w:28,color:SEG.ADV},{h:"Q4. Top Opportunity",w:26,color:SEG.ADV},{h:"Q5. 6-Month Potential",w:26,color:SEG.ADV},
-  ];
-  addSheet("Advertisement", advCols, (ws, tb) => {
-    rows.forEach(r => (r._advArr.length ? r._advArr : [{}]).forEach(e => {
-      const pct = e.target && e.achievement ? `${((Number(e.achievement)/Number(e.target))*100).toFixed(1)}%` : "";
-      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.name||"",e.designation||"",e.target||"",e.achievement||"",pct,e.q3_why_lost||"",e.q4_top_opportunity||"",e.q5_6month_potential||""], [5,6,7], tb);
-    }));
-  });
-
-  // ── Ad Agency Sheet ────────────────────────────────────────────────────
-  const agencyCols = [
-    {h:"Branch Name",w:18,color:SEG.AGENCY},{h:"Date",w:13,color:SEG.AGENCY},{h:"Visited By",w:16,color:SEG.AGENCY},
-    {h:"Agency Name",w:24,color:SEG.AGENCY},{h:"Contact Person",w:20,color:SEG.AGENCY},
-    {h:"Q1. Market Reputation",w:28,color:SEG.AGENCY},{h:"Q2. Advertiser Complaints",w:28,color:SEG.AGENCY},
-    {h:"Q3. Competitor Strength",w:26,color:SEG.AGENCY},{h:"Q4. Sector Potential",w:26,color:SEG.AGENCY},{h:"Q5. Improvements",w:26,color:SEG.AGENCY},
-  ];
-  addSheet("Ad Agency", agencyCols, (ws, tb) => {
-    rows.forEach(r => (r._agencyArr.length ? r._agencyArr : [{}]).forEach(e =>
-      addDataRow(ws, [r.branch,r.date,r.visitedBy,e.agency_name||"",e.contact_person||"",e.q1_market_reputation||"",e.q2_advertiser_complaint||"",e.q3_competitor_strength||"",e.q4_sector_potential||"",e.q5_improvement||""], [], tb)
-    ));
-  });
-
-  // ── Recovery Sheet ─────────────────────────────────────────────────────
-  const recCols = [
-    {h:"Branch Name",w:18,color:SEG.RECOVERY},{h:"Date",w:13,color:SEG.RECOVERY},{h:"Visited By",w:16,color:SEG.RECOVERY},
-    {h:"Party Name",w:24,color:SEG.RECOVERY},{h:"Outstanding (₹)",w:18,color:SEG.RECOVERY},
-    {h:"Ageing (Days)",w:14,color:SEG.RECOVERY},{h:"Reason",w:26,color:SEG.RECOVERY},
-    {h:"Recovery Plan",w:26,color:SEG.RECOVERY},{h:"Expected Date",w:16,color:SEG.RECOVERY},
-  ];
-  addSheet("Recovery", recCols, (ws, tb) => {
-    rows.forEach(r => (r._allParties.length ? r._allParties : [{}]).forEach(p =>
-      addDataRow(ws, [r.branch,r.date,r.visitedBy,p.party||"",p.outstanding||"",p.ageing||"",p.reason||"",p.recovery_plan||"",p.expected_date||""], [4,5], tb)
-    ));
-  });
-
-  // Download
-  const buffer = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `Patrika-Visit-Matrix-${new Date().toISOString().slice(0,10)}.xlsx`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// ── Visit Card UI ──────────────────────────────────────────────────────────
-function VisitCard({ row, isAdmin }) {
-  const growthColor = row.growth === null ? "" : row.growth < 0 ? "text-red-600" : "text-emerald-700";
-  const Section = ({ title, children }) => (
-    <div className="border-t border-border">
-      <div className="bg-secondary text-secondary-foreground px-4 py-1.5">
-        <span className="text-[10px] uppercase tracking-[0.15em] font-semibold">{title}</span>
-      </div>
-      <div className="px-4 py-3 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2">{children}</div>
-    </div>
-  );
-  const Field = ({ label, value, accent }) => (
-    <div>
-      <div className="text-[9px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
-      <div className={`text-sm font-medium mt-0.5 ${accent || ""}`}>{value || "—"}</div>
-    </div>
-  );
-  return (
-    <div className="border border-border bg-white">
-      <div className="bg-secondary text-secondary-foreground px-5 py-3 flex items-center justify-between">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">Branch Visit</div>
-          <h3 className="text-xl font-bold">{row.branch}</h3>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <div className="text-[10px] opacity-60 uppercase tracking-wider">Date</div>
-            <div className="text-sm font-mono font-semibold">{row.date}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-[10px] opacity-60 uppercase tracking-wider">Visited By</div>
-            <div className="text-sm font-semibold">{row.visitedBy}</div>
-          </div>
-          {isAdmin && (
-            <Link to={`/visits/${row.id}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70 border border-secondary-foreground/30 px-3 py-1.5 bg-primary text-primary-foreground">
-              Edit <ExternalLink className="w-3 h-3" />
-            </Link>
-          )}
-          <Link to={`/visits/${row.id}`} className="text-xs uppercase tracking-wider flex items-center gap-1.5 hover:opacity-70 border border-secondary-foreground/30 px-3 py-1.5">
-            Open <ExternalLink className="w-3 h-3" />
-          </Link>
-        </div>
-      </div>
-      <Section title="Branch Head">
-        <Field label="Name(s)" value={row.bhNames} />
-        <Field label="Designation" value={row.bhDesig} />
-        <Field label="Mobile" value={row.bhMobile} />
-        <Field label="Staff Vacancy" value={row.staffVacancy} />
-        <Field label="Daily Copies" value={row.dailyCopies?.toLocaleString("en-IN")} />
-        <Field label="Last Year Copies" value={row.lyCopies?.toLocaleString("en-IN")} />
-        <Field label="Growth %" value={row.growth !== null ? `${row.growth}%` : null} accent={growthColor} />
-        <Field label="Monthly Revenue" value={fmtINR(row.revenue)} />
-        <Field label="Outstanding" value={fmtINR(row.bhOutstanding)} accent={row.bhOutstanding > 0 ? "text-red-600" : ""} />
-      </Section>
-      <Section title="Circulation">
-        <Field label="Incharge(s)" value={row.circNames} />
-        <Field label="Weak Agents" value={String(row.weakAgentsCount || 0)} accent={row.weakAgentsCount > 0 ? "text-red-600 font-bold" : ""} />
-        <Field label="Weak Agent Names" value={row.weakAgentsList} />
-      </Section>
-      <Section title="Agent">
-        <Field label="Agent(s)" value={row.agentNames} />
-        <Field label="Total Agents" value={String(row.agentCount || 0)} />
-        <Field label="Outstanding" value={fmtINR(row.agentOutstanding)} accent={row.agentOutstanding > 0 ? "text-red-600" : ""} />
-      </Section>
-      <Section title="Hawker">
-        <Field label="Hawker(s)" value={row.hawkerNames} />
-        <Field label="Total" value={String(row.hawkerCount || 0)} />
-      </Section>
-      <Section title="Correspondent">
-        <Field label="Correspondent(s)" value={row.corrNames} />
-        <Field label="Total" value={String(row.corrCount || 0)} />
-      </Section>
-      <Section title="Advertisement">
-        <Field label="Member(s)" value={row.advNames} />
-        <Field label="Ad Target" value={fmtINR(row.adTarget)} />
-        <Field label="Achievement" value={fmtINR(row.adAchiev)} />
-        <Field label="Achievement %" value={row.adPct ? `${row.adPct}%` : null} accent={row.adPct && Number(row.adPct) < 80 ? "text-red-600" : "text-emerald-700"} />
-        <Field label="Lost Clients" value={String(row.lostClientsCount || 0)} accent={row.lostClientsCount > 0 ? "text-red-600" : ""} />
-        <Field label="Lost Client Names" value={row.lostClientsList} />
-      </Section>
-      <Section title="Ad Agency">
-        <Field label="Agency(s)" value={row.agencyNames} />
-        <Field label="Total" value={String(row.agencyCount || 0)} />
-      </Section>
-      <Section title="Recovery">
-        <Field label="Parties" value={String(row.recoveryParties || 0)} />
-        <Field label="Total Outstanding" value={fmtINR(row.totalRecovery)} accent={row.totalRecovery > 0 ? "text-red-600 font-bold" : ""} />
-      </Section>
-    </div>
-  );
-}
-
-// ── Main ───────────────────────────────────────────────────────────────────
-export default function VisitMatrix() {
-  const [visits, setVisits] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [downloading, setDownloading] = useState(false);
-  const [filterBranch, setFilterBranch] = useState("");
-  const [filterUser, setFilterUser] = useState("");
-  const [filterDateFrom, setFilterDateFrom] = useState("");
-  const [filterDateTo, setFilterDateTo] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
-
-  // Get isAdmin from auth
-  const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => {
+  const save = async () => {
+    setSaving(true);
     try {
-      const u = JSON.parse(localStorage.getItem("user") || "{}");
-      setIsAdmin(u.role === "admin");
-    } catch {}
-  }, []);
+      await api.put(`/visits/${visitId}/segment/${seg.key}`, { data: localData });
+      toast.success(`${seg.label} saved!`);
+      onSaved(seg.key, localData);
+    } catch {
+      toast.error(`Failed to save ${seg.label}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
-  useEffect(() => {
-    api.get("/visits").then(({ data }) => setVisits(data)).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+  return (
+    <div className="border border-border overflow-hidden">
+      {/* Header */}
+      <button
+        className={`w-full flex items-center justify-between px-5 py-4 ${seg.color} text-white`}
+        onClick={() => setOpen(o => !o)}
+      >
+        <div className="flex items-center gap-3">
+          {isSaved
+            ? <CheckCircle2 className="w-4 h-4 text-white/90" />
+            : <Circle className="w-4 h-4 text-white/50" />}
+          <span className="text-sm font-bold uppercase tracking-wider">{seg.label}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {isSaved && <span className="text-[10px] uppercase tracking-wider bg-white/20 px-2 py-0.5">Saved</span>}
+          {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </div>
+      </button>
 
-  const rows = useMemo(() => visits.map(buildRow), [visits]);
-  const filtered = useMemo(() => rows.filter(r => {
-    if (filterBranch && !r.branch.toLowerCase().includes(filterBranch.toLowerCase())) return false;
-    if (filterUser && !r.visitedBy.toLowerCase().includes(filterUser.toLowerCase())) return false;
-    if (filterDateFrom && r.date < filterDateFrom) return false;
-    if (filterDateTo && r.date > filterDateTo) return false;
-    return true;
-  }), [rows, filterBranch, filterUser, filterDateFrom, filterDateTo]);
+      {/* Body */}
+      {open && (
+        <div className="bg-muted/30 p-5">
+          <Panel data={localData} setData={setLocalData} />
+          <div className="flex justify-end mt-5">
+            <Button
+              onClick={save}
+              disabled={saving}
+              className="rounded-none bg-secondary text-secondary-foreground hover:bg-secondary/80 h-9 px-6 text-xs uppercase tracking-wider"
+            >
+              {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              Save {seg.label}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-  const hasFilters = filterBranch || filterUser || filterDateFrom || filterDateTo;
-  const clearFilters = () => { setFilterBranch(""); setFilterUser(""); setFilterDateFrom(""); setFilterDateTo(""); };
+// ─── Main Page ────────────────────────────────────────────────────────────────
+export default function VisitDetailPage() {
+  const { id } = useParams();
+  const { isAdmin } = useAuth();
+  const [visit, setVisit] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [savedKeys, setSavedKeys] = useState(new Set());
 
-  const handleDownload = async () => {
-    setDownloading(true);
-    try { await downloadExcel(filtered); }
-    catch (e) { console.error(e); alert("Download failed: " + e.message); }
-    finally { setDownloading(false); }
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/visits/${id}`);
+      setVisit(data);
+      // Mark already-filled segments as saved
+      const filled = Object.entries(data.segments || {})
+        .filter(([, v]) => v && (Array.isArray(v) ? v.length > 0 : Object.values(v).some(Boolean)))
+        .map(([k]) => k);
+      setSavedKeys(new Set(filled));
+    } catch {
+      toast.error("Failed to load visit");
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleSaved = (key, data) => {
+    setSavedKeys(prev => new Set([...prev, key]));
+    setVisit(v => ({ ...v, segments: { ...v.segments, [key]: data } }));
   };
 
   if (loading) return (
-    <div className="min-h-screen bg-background"><AppHeader />
-      <div className="p-12 flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="w-4 h-4 animate-spin" /> Loading...
+    <div className="min-h-screen bg-background">
+      <AppHeader />
+      <div className="flex items-center justify-center py-32 text-muted-foreground">Loading...</div>
+    </div>
+  );
+
+  if (!visit) return (
+    <div className="min-h-screen bg-background">
+      <AppHeader />
+      <div className="max-w-[900px] mx-auto px-6 py-16 text-center">
+        <p className="text-muted-foreground">Visit not found.</p>
+        <Link to="/" className="text-sm underline mt-4 block">← Back to visits</Link>
       </div>
     </div>
   );
+
+  const completedCount = savedKeys.size;
 
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
-      <main className="max-w-[1400px] mx-auto px-6 py-10">
-        <div className="flex items-end justify-between mb-6">
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-2">All Visits</div>
-            <h2 className="text-4xl font-extrabold tracking-tight">Visit Matrix</h2>
-            <p className="text-sm text-muted-foreground mt-2">{filtered.length} of {rows.length} visits</p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setShowFilters(!showFilters)} className="rounded-none h-10">
-              <Filter className="w-4 h-4 mr-2" />
-              Filters {hasFilters && <span className="ml-1.5 bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 rounded-full">ON</span>}
-            </Button>
-            <Button onClick={handleDownload} disabled={downloading} className="rounded-none h-10 bg-emerald-700 hover:bg-emerald-800">
-              {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-              {downloading ? "Preparing..." : "Download Excel"}
-            </Button>
+      <main className="max-w-[900px] mx-auto px-6 py-10">
+
+        {/* Back link */}
+        <Link to="/" className="inline-flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground mb-6">
+          <ArrowLeft className="w-3.5 h-3.5" /> All Visits
+        </Link>
+
+        {/* Visit header */}
+        <div className="bg-secondary text-secondary-foreground px-6 py-5 mb-2">
+          <div className="text-[10px] uppercase tracking-[0.2em] opacity-60 mb-1">Branch Visit</div>
+          <h2 className="text-3xl font-black tracking-tight capitalize">{visit.branch_name}</h2>
+          <div className="flex gap-6 mt-3 text-xs opacity-70">
+            <span>📅 {visit.visit_date}</span>
+            {visit.visiting_team && <span>👥 {visit.visiting_team}</span>}
+            {visit.created_by_name && <span>🧑 {visit.created_by_name}</span>}
           </div>
         </div>
-        {showFilters && (
-          <div className="border border-border bg-white p-5 mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Branch Name</div>
-              <Input value={filterBranch} onChange={e => setFilterBranch(e.target.value)} placeholder="e.g. Bikaner" className="rounded-none h-9" />
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Visited By</div>
-              <Input value={filterUser} onChange={e => setFilterUser(e.target.value)} placeholder="e.g. Admin" className="rounded-none h-9" />
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Date From</div>
-              <Input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} className="rounded-none h-9" />
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Date To</div>
-              <Input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} className="rounded-none h-9" />
-            </div>
-            {hasFilters && (
-              <div className="col-span-2 md:col-span-4 flex justify-end">
-                <Button variant="outline" size="sm" onClick={clearFilters} className="rounded-none h-8 text-xs">
-                  <X className="w-3 h-3 mr-1" /> Clear Filters
-                </Button>
-              </div>
-            )}
+
+        {/* Progress bar */}
+        <div className="bg-white border border-t-0 border-border px-6 py-4 mb-8 flex items-center gap-4">
+          <div className="flex-1 bg-muted h-2 overflow-hidden">
+            <div
+              className="h-2 bg-secondary transition-all duration-500"
+              style={{ width: `${(completedCount / SEGMENTS.length) * 100}%` }}
+            />
           </div>
-        )}
-        <div className="editorial-rule mb-8" />
-        {filtered.length === 0 ? (
-          <div className="border border-border p-16 text-center bg-white">
-            <p className="text-sm text-muted-foreground">{hasFilters ? "No visits match filters." : "No visits yet."}</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {filtered.map(row => <VisitCard key={row.id} row={row} isAdmin={isAdmin} />)}
+          <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">
+            {completedCount}/{SEGMENTS.length} Segments Saved
+          </span>
+        </div>
+
+        {/* Segment sections */}
+        <div className="space-y-3">
+          {SEGMENTS.map(seg => (
+            <SegmentSection
+              key={seg.key}
+              seg={seg}
+              visitId={id}
+              segData={(visit.segments || {})[seg.key]}
+              isSaved={savedKeys.has(seg.key)}
+              onSaved={handleSaved}
+            />
+          ))}
+        </div>
+
+        {completedCount === SEGMENTS.length && (
+          <div className="mt-8 border border-emerald-200 bg-emerald-50 p-5 text-center">
+            <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-emerald-800">All segments complete! Visit data saved.</p>
+            <Link to="/" className="text-xs text-emerald-700 underline mt-2 block">← Back to All Visits</Link>
           </div>
         )}
       </main>
