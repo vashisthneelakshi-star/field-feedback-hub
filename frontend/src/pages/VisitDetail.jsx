@@ -286,8 +286,10 @@ function SegmentSection({ seg, segData, visitId, isSaved, onSaved }) {
       await api.put(`/visits/${visitId}/segment/${seg.key}`, { data: localData });
       toast.success(`${seg.label} saved!`);
       onSaved(seg.key, localData);
-    } catch {
-      toast.error(`Failed to save ${seg.label}`);
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.message || "Server error - try again";
+      toast.error(`Save failed: ${msg}`);
+      console.error("Segment save error:", err?.response || err);
     } finally {
       setSaving(false);
     }
